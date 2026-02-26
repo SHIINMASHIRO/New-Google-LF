@@ -1,0 +1,33 @@
+# Binaries
+/master
+/agent
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+/vendor/
+
+# Node
+web/node_modules/
+web/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Secrets
+*.pem
+*.key

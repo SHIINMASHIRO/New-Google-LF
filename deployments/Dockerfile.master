@@ -1,0 +1,35 @@
+# ── Stage 1: Build React frontend ─────────────────────────────────────────────
+FROM node:20-alpine AS web-builder
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# ── Stage 2: Build Go binary ──────────────────────────────────────────────────
+FROM golang:1.22-alpine AS go-builder
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+# Copy built web assets
+COPY --from=web-builder /app/web/dist ./web/dist
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /master ./cmd/master
+
+# ── Stage 3: Minimal runtime ──────────────────────────────────────────────────
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+COPY --from=go-builder /master .
+
+EXPOSE 8080
+ENV MASTER_ADDR=":8080"
+
+CMD ["./master"]
