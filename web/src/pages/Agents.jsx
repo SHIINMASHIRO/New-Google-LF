@@ -41,17 +41,17 @@ export default function Agents() {
 
   useEffect(() => { reload(); const t = setInterval(reload, 10000); return () => clearInterval(t) }, [])
 
-  // Build unified rows: real agents + unfinished provision jobs (not yet linked to an agent)
-  const provisionOnlyJobs = jobs.filter(j => !j.agent_id || j.status === 'failed' || j.status === 'pending' || j.status === 'running')
+  // IPs that already have a registered agent
+  const agentIPs = new Set(agents.map(a => a.ip))
 
-  // Rows: real agents first, then provision-only jobs
+  // Rows: real agents first, then provision-only jobs (exclude jobs whose IP already has a registered agent)
   const rows = [
     ...agents.map(a => {
       const job = jobs.find(j => j.agent_id === a.id)
       return { type: 'agent', key: a.id, agent: a, job }
     }),
-    ...provisionOnlyJobs
-      .filter(j => !j.agent_id) // exclude jobs already linked to an agent row
+    ...jobs
+      .filter(j => !j.agent_id && !agentIPs.has(j.host_ip) && (j.status === 'failed' || j.status === 'pending' || j.status === 'running'))
       .map(j => ({ type: 'provision', key: j.id, agent: null, job: j })),
   ]
 
