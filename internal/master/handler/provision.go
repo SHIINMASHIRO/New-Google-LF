@@ -21,8 +21,10 @@ func (h *ProvisionHandler) Router(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/agents/provision", h.StartProvision)
 	mux.HandleFunc("GET /api/v1/agents/provision-jobs", h.ListJobs)
 	mux.HandleFunc("GET /api/v1/agents/provision-jobs/{job_id}", h.GetJob)
+	mux.HandleFunc("POST /api/v1/agents/provision-jobs/{job_id}/retry", h.RetryJob)
 	mux.HandleFunc("POST /api/v1/credentials", h.CreateCredential)
 	mux.HandleFunc("GET /api/v1/credentials", h.ListCredentials)
+	mux.HandleFunc("DELETE /api/v1/credentials/{id}", h.DeleteCredential)
 }
 
 // StartProvision handles POST /api/v1/agents/provision
@@ -59,6 +61,27 @@ func (h *ProvisionHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, job)
+}
+
+// RetryJob handles POST /api/v1/agents/provision-jobs/{job_id}/retry
+func (h *ProvisionHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("job_id")
+	job, err := h.svc.Retry(r.Context(), id)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, job)
+}
+
+// DeleteCredential handles DELETE /api/v1/credentials/{id}
+func (h *ProvisionHandler) DeleteCredential(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.svc.DeleteCredential(r.Context(), id); err != nil {
+		respondErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // CreateCredential handles POST /api/v1/credentials

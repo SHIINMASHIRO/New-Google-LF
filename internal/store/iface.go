@@ -53,6 +53,7 @@ type ProvisionJobStore interface {
 	AppendLog(ctx context.Context, id string, line string) error
 	SetAgentID(ctx context.Context, id string, agentID string) error
 	SetFailed(ctx context.Context, id string, step string, reason string) error
+	ResetForRetry(ctx context.Context, id string) error
 }
 
 // BandwidthStore manages bandwidth samples.
@@ -69,6 +70,7 @@ type CredentialStore interface {
 	Create(ctx context.Context, c *model.Credential) error
 	Get(ctx context.Context, id string) (*model.Credential, error)
 	List(ctx context.Context) ([]*model.Credential, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // BandwidthPoint is a time-bucketed bandwidth data point.

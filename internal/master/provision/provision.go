@@ -178,6 +178,38 @@ func (s *Service) run(jobID string, req *JobRequest) {
 	fail("health_check", "agent did not come online within 60s")
 }
 
+// Retry resets a failed provision job and re-runs it.
+func (s *Service) Retry(ctx context.Context, jobID string) (*model.ProvisionJob, error) {
+	job, err := s.store.ProvisionJobs().Get(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.Status != model.ProvisionStatusFailed {
+		return nil, fmt.Errorf("only failed jobs can be retried (current: %s)", job.Status)
+	}
+	if err := s.store.ProvisionJobs().ResetForRetry(ctx, jobID); err != nil {
+		return nil, err
+	}
+	req := &JobRequest{
+		HostIP:        job.HostIP,
+		SSHPort:       job.SSHPort,
+		SSHUser:       job.SSHUser,
+		AuthType:      job.AuthType,
+		CredentialRef: job.CredentialRef,
+	}
+	go s.run(jobID, req)
+	job.Status = model.ProvisionStatusPending
+	job.CurrentStep = "created"
+	job.Log = ""
+	job.FailedStep = ""
+	return job, nil
+}
+
+// DeleteCredential deletes a credential by ID.
+func (s *Service) DeleteCredential(ctx context.Context, id string) error {
+	return s.store.Credentials().Delete(ctx, id)
+}
+
 // ListJobs returns all provisioning jobs.
 func (s *Service) ListJobs(ctx context.Context) ([]*model.ProvisionJob, error) {
 	return s.store.ProvisionJobs().List(ctx)

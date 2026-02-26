@@ -21,6 +21,7 @@ export const agentsApi = {
   provision: (data) => req('POST', '/agents/provision', data),
   listProvisionJobs: () => req('GET', '/agents/provision-jobs'),
   getProvisionJob: (id) => req('GET', `/agents/provision-jobs/${id}`),
+  retryProvisionJob: (id) => req('POST', `/agents/provision-jobs/${id}/retry`),
 }
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
@@ -50,4 +51,5 @@ export const dashboardApi = {
 export const credentialsApi = {
   list: () => req('GET', '/credentials'),
   create: (data) => req('POST', '/credentials', data),
+  delete: (id) => req('DELETE', `/credentials/${id}`),
 }

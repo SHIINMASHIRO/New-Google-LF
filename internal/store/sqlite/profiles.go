@@ -113,6 +113,13 @@ func (s *provisionJobStore) SetFailed(ctx context.Context, id string, step strin
 	return err
 }
 
+func (s *provisionJobStore) ResetForRetry(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE provision_jobs SET status=?,current_step='created',log='',agent_id='',failed_step='',updated_at=? WHERE id=?`,
+		model.ProvisionStatusPending, time.Now().UTC(), id)
+	return err
+}
+
 func scanProvisionJob(row scanner) (*model.ProvisionJob, error) {
 	j := &model.ProvisionJob{}
 	err := row.Scan(&j.ID, &j.HostIP, &j.SSHPort, &j.SSHUser, &j.AuthType, &j.CredentialRef,
@@ -141,6 +148,11 @@ func (s *credentialStore) Get(ctx context.Context, id string) (*model.Credential
 		return nil, fmt.Errorf("credential not found")
 	}
 	return c, err
+}
+
+func (s *credentialStore) Delete(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM credentials WHERE id=?`, id)
+	return err
 }
 
 func (s *credentialStore) List(ctx context.Context) ([]*model.Credential, error) {
