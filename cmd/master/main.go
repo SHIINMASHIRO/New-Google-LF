@@ -26,7 +26,7 @@ func main() {
 	addr := envOr("MASTER_ADDR", ":8080")
 	dsn := envOr("SQLITE_DSN", "file:master.db?cache=shared&_fk=on")
 	masterURL := envOr("MASTER_URL", "http://localhost:8080")
-	agentBin := envOr("AGENT_BIN_PATH", "")
+	agentDownloadURL := envOr("AGENT_DOWNLOAD_URL", "")
 
 	// ─── Store ────────────────────────────────────────────────────────────────
 	st, err := sqlite.New(dsn)
@@ -40,7 +40,7 @@ func main() {
 	agentSvc := service.NewAgentService(st)
 	taskSvc := service.NewTaskService(st)
 	dashSvc := service.NewDashboardService(st)
-	provSvc := provision.NewService(st, masterURL, agentBin)
+	provSvc := provision.NewService(st, masterURL, agentDownloadURL)
 	sched := scheduler.New(st)
 
 	// ─── Handlers ─────────────────────────────────────────────────────────────

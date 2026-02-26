@@ -8,8 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -20,14 +19,17 @@ import (
 
 // Service handles SSH-based agent provisioning.
 type Service struct {
-	store     store.Store
-	masterURL string
-	agentBin  string // path to agent binary on master host
+	store       store.Store
+	masterURL   string
+	downloadURL string // GitHub release download URL template with {arch} placeholder
 }
 
 // NewService creates a new provision Service.
-func NewService(st store.Store, masterURL, agentBin string) *Service {
-	return &Service{store: st, masterURL: masterURL, agentBin: agentBin}
+func NewService(st store.Store, masterURL, downloadURL string) *Service {
+	if downloadURL == "" {
+		downloadURL = "https://github.com/SHIINMASHIRO/New-Google-LF/releases/latest/download/agent-linux-{arch}"
+	}
+	return &Service{store: st, masterURL: masterURL, downloadURL: downloadURL}
 }
 
 // JobRequest is the input for a provisioning job.
@@ -115,20 +117,25 @@ func (s *Service) run(jobID string, req *JobRequest) {
 	defer client.Close()
 	logLine("SSH connectivity OK")
 
-	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "upload_binary")
+	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "download_binary")
 
-	// Step 4: Upload agent binary
-	logLine("Uploading agent binary...")
-	agentData, err := s.readOrBuildAgent()
+	// Step 4: Download agent binary from GitHub Releases
+	logLine("Detecting target architecture...")
+	archOut, err := runSSH(client, "uname -m")
 	if err != nil {
-		fail("upload_binary", err.Error())
+		fail("download_binary", "detect arch: "+err.Error())
 		return
 	}
-	if err := uploadBytes(client, agentData, "/tmp/ngoogle-agent"); err != nil {
-		fail("upload_binary", err.Error())
+	goArch := mapArch(strings.TrimSpace(archOut))
+	downloadURL := strings.ReplaceAll(s.downloadURL, "{arch}", goArch)
+	logLine(fmt.Sprintf("Downloading agent binary (%s) from %s", goArch, downloadURL))
+
+	dlCmd := fmt.Sprintf("wget -q -O /tmp/ngoogle-agent '%s' || curl -fsSL -o /tmp/ngoogle-agent '%s'", downloadURL, downloadURL)
+	if out, err := runSSH(client, dlCmd); err != nil {
+		fail("download_binary", fmt.Sprintf("download failed: %s; output: %s", err, out))
 		return
 	}
-	logLine("Agent binary uploaded")
+	logLine("Agent binary downloaded")
 
 	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "install_service")
 
@@ -233,41 +240,16 @@ func runSSH(client *ssh.Client, cmd string) (string, error) {
 	return buf.String(), sess.Run(cmd)
 }
 
-func uploadBytes(client *ssh.Client, data []byte, remotePath string) error {
-	sess, err := client.NewSession()
-	if err != nil {
-		return err
+// mapArch converts uname -m output to Go GOARCH names.
+func mapArch(uname string) string {
+	switch uname {
+	case "x86_64":
+		return "amd64"
+	case "aarch64", "arm64":
+		return "arm64"
+	default:
+		return "amd64"
 	}
-	defer sess.Close()
-	sess.Stdin = bytes.NewReader(data)
-	var errBuf bytes.Buffer
-	sess.Stderr = &errBuf
-	if err := sess.Run("cat > " + remotePath); err != nil {
-		return fmt.Errorf("upload: %w; stderr: %s", err, errBuf.String())
-	}
-	return nil
-}
-
-func (s *Service) readOrBuildAgent() ([]byte, error) {
-	if s.agentBin != "" {
-		data, err := os.ReadFile(s.agentBin)
-		if err == nil {
-			return data, nil
-		}
-	}
-	// Build from source
-	tmpFile := "/tmp/ngoogle-agent-build"
-	cmd := exec.Command("go", "build", "-o", tmpFile, "./cmd/agent")
-	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("build agent: %s", string(out))
-	}
-	data, err := os.ReadFile(tmpFile)
-	if err != nil {
-		return nil, err
-	}
-	_ = os.Remove(tmpFile)
-	return data, nil
 }
 
 // ─── Systemd template ─────────────────────────────────────────────────────────
