@@ -120,6 +120,11 @@ func (s *AgentService) Get(ctx context.Context, id string) (*model.Agent, error)
 	return s.store.Agents().Get(ctx, id)
 }
 
+// Delete removes an agent by ID.
+func (s *AgentService) Delete(ctx context.Context, id string) error {
+	return s.store.Agents().Delete(ctx, id)
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func generateID() string {

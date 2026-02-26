@@ -56,6 +56,26 @@ func (s *Service) Start(ctx context.Context, req *JobRequest) (*model.ProvisionJ
 	if req.SSHPort <= 0 {
 		req.SSHPort = 22
 	}
+	// Check for duplicate IP in existing agents
+	agents, err := s.store.Agents().List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("check duplicate IP: %w", err)
+	}
+	for _, a := range agents {
+		if a.IP == req.HostIP {
+			return nil, fmt.Errorf("agent with IP %s already exists (id: %s)", req.HostIP, a.ID)
+		}
+	}
+	// Check for in-progress provision jobs with same IP
+	jobs, err := s.store.ProvisionJobs().List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("check duplicate provision: %w", err)
+	}
+	for _, j := range jobs {
+		if j.HostIP == req.HostIP && (j.Status == model.ProvisionStatusPending || j.Status == model.ProvisionStatusRunning) {
+			return nil, fmt.Errorf("a provisioning job for IP %s is already in progress", req.HostIP)
+		}
+	}
 	now := time.Now()
 	job := &model.ProvisionJob{
 		ID:            newID(),

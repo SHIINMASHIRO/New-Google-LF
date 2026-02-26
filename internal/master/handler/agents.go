@@ -74,6 +74,20 @@ func (h *AgentHandler) Router(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/agents/heartbeat", h.Heartbeat)
 	mux.HandleFunc("GET /api/v1/agents", h.List)
 	mux.HandleFunc("GET /api/v1/agents/{id}", h.agentByID)
+	mux.HandleFunc("DELETE /api/v1/agents/{id}", h.deleteAgent)
+}
+
+func (h *AgentHandler) deleteAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondErr(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		respondErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (h *AgentHandler) agentByID(w http.ResponseWriter, r *http.Request) {

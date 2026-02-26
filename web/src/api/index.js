@@ -18,6 +18,7 @@ async function req(method, path, body) {
 export const agentsApi = {
   list: () => req('GET', '/agents'),
   get: (id) => req('GET', `/agents/${id}`),
+  delete: (id) => req('DELETE', `/agents/${id}`),
   provision: (data) => req('POST', '/agents/provision', data),
   listProvisionJobs: () => req('GET', '/agents/provision-jobs'),
   getProvisionJob: (id) => req('GET', `/agents/provision-jobs/${id}`),
