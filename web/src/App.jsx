@@ -1,15 +1,17 @@
 import React from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Server, ListTodo, Settings } from 'lucide-react'
+import { LayoutDashboard, Server, ListTodo, Key, Settings } from 'lucide-react'
 import Dashboard from './pages/Dashboard.jsx'
 import Agents from './pages/Agents.jsx'
 import Tasks from './pages/Tasks.jsx'
 import TaskDetail from './pages/TaskDetail.jsx'
+import Credentials from './pages/Credentials.jsx'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/agents', icon: Server, label: 'Agents' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
+  { to: '/credentials', icon: Key, label: 'Credentials' },
 ]
 
 export default function App() {
@@ -57,6 +59,7 @@ export default function App() {
           <Route path="/agents" element={<Agents />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
+          <Route path="/credentials" element={<Credentials />} />
         </Routes>
       </main>
     </div>

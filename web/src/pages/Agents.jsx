@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, RefreshCw, ChevronDown, ChevronUp, Server, RotateCw, Key, Trash2, Loader2 } from 'lucide-react'
+import { Plus, RefreshCw, ChevronDown, ChevronUp, Server, RotateCw, Trash2, Loader2 } from 'lucide-react'
 import { agentsApi, credentialsApi } from '../api/index.js'
 import Badge from '../components/Badge.jsx'
 
@@ -19,7 +19,6 @@ export default function Agents() {
   const [jobs, setJobs] = useState([])
   const [creds, setCreds] = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [showCredModal, setShowCredModal] = useState(false)
   const [error, setError] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [retrying, setRetrying] = useState(null)
@@ -81,15 +80,6 @@ export default function Agents() {
     }
   }
 
-  const handleDeleteCred = async (id) => {
-    try {
-      await credentialsApi.delete(id)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
   // Collect all existing IPs (from agents and in-progress jobs) for duplicate check
   const existingIPs = new Set([
     ...agents.map(a => a.ip),
@@ -97,7 +87,7 @@ export default function Agents() {
   ])
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-white">Agents</h1>
@@ -115,176 +105,130 @@ export default function Agents() {
 
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">{error}<button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-300">✕</button></div>}
 
-      <div className="flex gap-4">
-        {/* Left Sidebar: Credentials */}
-        <div className="w-64 flex-shrink-0">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden sticky top-6">
-            <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key size={14} className="text-gray-500" />
-                <h2 className="text-sm font-medium text-white">Credentials</h2>
-              </div>
-              <button onClick={() => setShowCredModal(true)} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                + Add
-              </button>
-            </div>
-            {creds.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-600 text-xs">
-                No credentials yet.
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-800/50">
-                {creds.map(c => (
-                  <div key={c.id} className="px-4 py-2.5 flex items-center justify-between group hover:bg-gray-800/30 transition-colors">
-                    <div className="min-w-0">
-                      <div className="text-sm text-white truncate">{c.name}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Badge label={c.type === 'key' ? 'SSH Key' : 'Password'} />
-                        <span className="text-[10px] text-gray-600">{fmtDate(c.created_at)}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteCred(c.id)}
-                      className="p-1 rounded text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"
-                      title="Delete credential"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Agent Table */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="border-b border-gray-800 bg-gray-800/50">
+            <tr className="text-gray-400 text-xs">
+              <th className="px-4 py-3 text-left font-medium w-8"></th>
+              <th className="px-4 py-3 text-left font-medium">Host / Hostname</th>
+              <th className="px-4 py-3 text-left font-medium">IP</th>
+              <th className="px-4 py-3 text-left font-medium">Status</th>
+              <th className="px-4 py-3 text-left font-medium">Step</th>
+              <th className="px-4 py-3 text-left font-medium">Rate</th>
+              <th className="px-4 py-3 text-left font-medium">Last Seen</th>
+              <th className="px-4 py-3 text-left font-medium w-28">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/50">
+            {rows.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600">
+                No agents yet. Click "Add Agent" to provision one.
+              </td></tr>
+            ) : rows.map(row => {
+              const isExpanded = expandedRow === row.key
+              const isFailed = row.job?.status === 'failed'
+              const isProvisioning = row.job?.status === 'running' || row.job?.status === 'pending'
 
-        {/* Right: Agent Table */}
-        <div className="flex-1 min-w-0">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="border-b border-gray-800 bg-gray-800/50">
-                <tr className="text-gray-400 text-xs">
-                  <th className="px-4 py-3 text-left font-medium w-8"></th>
-                  <th className="px-4 py-3 text-left font-medium">Host / Hostname</th>
-                  <th className="px-4 py-3 text-left font-medium">IP</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Step</th>
-                  <th className="px-4 py-3 text-left font-medium">Rate</th>
-                  <th className="px-4 py-3 text-left font-medium">Last Seen</th>
-                  <th className="px-4 py-3 text-left font-medium w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {rows.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600">
-                    No agents yet. Click "Add Agent" to provision one.
-                  </td></tr>
-                ) : rows.map(row => {
-                  const isExpanded = expandedRow === row.key
-                  const isFailed = row.job?.status === 'failed'
-                  const isProvisioning = row.job?.status === 'running' || row.job?.status === 'pending'
-
-                  return (
-                    <React.Fragment key={row.key}>
-                      <tr
-                        className={`hover:bg-gray-800/30 transition-colors ${isFailed ? 'bg-red-500/5' : ''} ${row.job?.log ? 'cursor-pointer' : ''}`}
-                        onClick={() => row.job?.log && setExpandedRow(isExpanded ? null : row.key)}
-                      >
-                        <td className="px-4 py-3">
-                          {row.job?.log ? (
-                            isExpanded
-                              ? <ChevronUp size={14} className="text-gray-500" />
-                              : <ChevronDown size={14} className="text-gray-500" />
-                          ) : (
-                            <Server size={14} className="text-gray-600" />
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {row.agent ? (
-                            <div>
-                              <span className="text-white">{row.agent.hostname}</span>
-                              <span className="text-gray-600 text-xs ml-2 font-mono">{row.agent.id.slice(0, 8)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">{row.job?.host_ip}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-gray-400 font-mono text-xs">
-                          {row.agent?.ip || row.job?.host_ip}
-                        </td>
-                        <td className="px-4 py-3">
-                          {row.agent ? (
-                            <Badge label={row.agent.status} />
-                          ) : (
-                            <Badge label={provisionLabel(row.job?.status)} />
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">
-                          {isProvisioning ? (
-                            <span className="flex items-center gap-1.5">
-                              <Loader2 size={12} className="animate-spin text-yellow-400" />
-                              {row.job?.current_step}
-                            </span>
-                          ) : isFailed ? (
-                            <span className="text-red-400">{row.job?.failed_step || row.job?.current_step}</span>
-                          ) : row.agent ? (
-                            <span className="text-gray-600">—</span>
-                          ) : (
-                            <span className="text-gray-600">{row.job?.current_step}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-green-400">
-                          {row.agent ? `${row.agent.current_rate_mbps.toFixed(2)} Mbps` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">
-                          {row.agent ? fmtDate(row.agent.last_heartbeat) : fmtDate(row.job?.created_at)}
-                        </td>
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1">
-                            {isFailed && (
-                              <button
-                                onClick={() => handleRetry(row.job.id)}
-                                disabled={retrying === row.job.id}
-                                className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 text-xs hover:bg-yellow-600/30 transition-colors disabled:opacity-50"
-                                title="Retry provisioning"
-                              >
-                                <RotateCw size={12} className={retrying === row.job.id ? 'animate-spin' : ''} />
-                                Retry
-                              </button>
-                            )}
-                            {row.agent && (
-                              <button
-                                onClick={() => handleDeleteAgent(row.agent.id)}
-                                disabled={deleting === row.agent.id}
-                                className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                                title="Delete agent"
-                              >
-                                <Trash2 size={13} className={deleting === row.agent.id ? 'animate-pulse' : ''} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded && row.job?.log && (
-                        <tr>
-                          <td colSpan={8} className="px-4 pb-3 pt-0">
-                            <pre className="bg-gray-950 rounded-lg p-3 text-xs text-gray-400 font-mono overflow-auto max-h-48 whitespace-pre-wrap">
-                              {row.job.log}
-                            </pre>
-                          </td>
-                        </tr>
+              return (
+                <React.Fragment key={row.key}>
+                  <tr
+                    className={`hover:bg-gray-800/30 transition-colors ${isFailed ? 'bg-red-500/5' : ''} ${row.job?.log ? 'cursor-pointer' : ''}`}
+                    onClick={() => row.job?.log && setExpandedRow(isExpanded ? null : row.key)}
+                  >
+                    <td className="px-4 py-3">
+                      {row.job?.log ? (
+                        isExpanded
+                          ? <ChevronUp size={14} className="text-gray-500" />
+                          : <ChevronDown size={14} className="text-gray-500" />
+                      ) : (
+                        <Server size={14} className="text-gray-600" />
                       )}
-                    </React.Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.agent ? (
+                        <div>
+                          <span className="text-white">{row.agent.hostname}</span>
+                          <span className="text-gray-600 text-xs ml-2 font-mono">{row.agent.id.slice(0, 8)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">{row.job?.host_ip}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">
+                      {row.agent?.ip || row.job?.host_ip}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.agent ? (
+                        <Badge label={row.agent.status} />
+                      ) : (
+                        <Badge label={provisionLabel(row.job?.status)} />
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {isProvisioning ? (
+                        <span className="flex items-center gap-1.5">
+                          <Loader2 size={12} className="animate-spin text-yellow-400" />
+                          {row.job?.current_step}
+                        </span>
+                      ) : isFailed ? (
+                        <span className="text-red-400">{row.job?.failed_step || row.job?.current_step}</span>
+                      ) : row.agent ? (
+                        <span className="text-gray-600">—</span>
+                      ) : (
+                        <span className="text-gray-600">{row.job?.current_step}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-green-400">
+                      {row.agent ? `${row.agent.current_rate_mbps.toFixed(2)} Mbps` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">
+                      {row.agent ? fmtDate(row.agent.last_heartbeat) : fmtDate(row.job?.created_at)}
+                    </td>
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        {isFailed && (
+                          <button
+                            onClick={() => handleRetry(row.job.id)}
+                            disabled={retrying === row.job.id}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 text-xs hover:bg-yellow-600/30 transition-colors disabled:opacity-50"
+                            title="Retry provisioning"
+                          >
+                            <RotateCw size={12} className={retrying === row.job.id ? 'animate-spin' : ''} />
+                            Retry
+                          </button>
+                        )}
+                        {row.agent && (
+                          <button
+                            onClick={() => handleDeleteAgent(row.agent.id)}
+                            disabled={deleting === row.agent.id}
+                            className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                            title="Delete agent"
+                          >
+                            <Trash2 size={13} className={deleting === row.agent.id ? 'animate-pulse' : ''} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {isExpanded && row.job?.log && (
+                    <tr>
+                      <td colSpan={8} className="px-4 pb-3 pt-0">
+                        <pre className="bg-gray-950 rounded-lg p-3 text-xs text-gray-400 font-mono overflow-auto max-h-48 whitespace-pre-wrap">
+                          {row.job.log}
+                        </pre>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* Modals */}
+      {/* Modal */}
       {showModal && <ProvisionModal creds={creds} existingIPs={existingIPs} onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); reload() }} />}
-      {showCredModal && <CredentialModal onClose={() => setShowCredModal(false)} onSuccess={() => { setShowCredModal(false); reload() }} />}
     </div>
   )
 }
@@ -341,49 +285,6 @@ function ProvisionModal({ creds, existingIPs, onClose, onSuccess }) {
         <div className="flex gap-2 justify-end pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" disabled={loading || ipDuplicate} className="btn-primary">{loading ? 'Provisioning...' : 'Provision'}</button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function CredentialModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({ name: '', type: 'key', payload: '' })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-  const submit = async e => {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      await credentialsApi.create(form)
-      onSuccess()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Modal title="Add Credential" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Name"><input required className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Type">
-          <select className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-            <option value="key">SSH Private Key</option>
-            <option value="password">Password</option>
-          </select>
-        </Field>
-        <Field label={form.type === 'key' ? 'Private Key (PEM)' : 'Password'}>
-          {form.type === 'key'
-            ? <textarea required className="input font-mono text-xs" rows={6} value={form.payload} onChange={e => setForm(f => ({ ...f, payload: e.target.value }))} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." />
-            : <input required type="password" className="input" value={form.payload} onChange={e => setForm(f => ({ ...f, payload: e.target.value }))} />}
-        </Field>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-        <div className="flex gap-2 justify-end pt-2">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Saving...' : 'Save'}</button>
         </div>
       </form>
     </Modal>
