@@ -157,7 +157,7 @@ func (r *taskRunner) execute(ctx context.Context, task *model.Task, meter *ratel
 
 	slog.Info("executing task", "task", task.ID, "type", task.Type, "url", task.TargetURL)
 
-	rep := reporter.NewTaskReporter(task.ID, r.agentID, r.client)
+	rep := reporter.NewTaskReporter(task.ID, r.agentID, r.client, meter)
 	go rep.Run(ctx)
 
 	progressFn := func(bytesTotal int64) {

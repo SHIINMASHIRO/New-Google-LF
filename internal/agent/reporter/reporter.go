@@ -26,12 +26,15 @@ type TaskReporter struct {
 }
 
 // NewTaskReporter creates a reporter for a task.
-func NewTaskReporter(taskID, agentID string, c *client.Client) *TaskReporter {
+func NewTaskReporter(taskID, agentID string, c *client.Client, meter *ratelimit.Meter) *TaskReporter {
+	if meter == nil {
+		meter = &ratelimit.Meter{}
+	}
 	return &TaskReporter{
 		taskID:  taskID,
 		agentID: agentID,
 		client:  c,
-		meter:   &ratelimit.Meter{},
+		meter:   meter,
 	}
 }
 

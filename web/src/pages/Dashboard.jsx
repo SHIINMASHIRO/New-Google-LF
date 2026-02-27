@@ -18,17 +18,23 @@ export default function Dashboard() {
   const [history, setHistory] = useState([])
   const [error, setError] = useState(null)
 
-  const loadData = async () => {
+  const loadOverview = async () => {
     try {
-      const [ov, hist] = await Promise.all([
-        dashboardApi.overview(),
-        dashboardApi.bandwidthHistory(
-          new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
-          new Date().toISOString(),
-          '5m'
-        ),
-      ])
+      const ov = await dashboardApi.overview()
       setOverview(ov)
+      setError(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const loadHistory = async () => {
+    try {
+      const hist = await dashboardApi.bandwidthHistory(
+        new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
+        new Date().toISOString(),
+        '5m'
+      )
       setHistory((hist || []).map(p => ({
         ts: fmtTime(p.ts),
         avg: +p.avg_mbps.toFixed(2),
@@ -40,9 +46,14 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    loadData()
-    const t = setInterval(loadData, 10000)
-    return () => clearInterval(t)
+    loadOverview()
+    loadHistory()
+    const overviewTimer = setInterval(loadOverview, 1000)
+    const historyTimer = setInterval(loadHistory, 10000)
+    return () => {
+      clearInterval(overviewTimer)
+      clearInterval(historyTimer)
+    }
   }, [])
 
   return (
