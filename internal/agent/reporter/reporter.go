@@ -75,7 +75,7 @@ func (r *TaskReporter) report(ctx context.Context) {
 	m := &model.TaskMetrics{
 		TaskID:       r.taskID,
 		AgentID:      r.agentID,
-		BytesTotal:   r.bytesTotal,
+		BytesTotal:   r.meter.TotalBytes(),
 		RequestCount: r.reqCount,
 		ErrorCount:   r.errCount,
 		RateMbps5s:   r.meter.Rate5s(),

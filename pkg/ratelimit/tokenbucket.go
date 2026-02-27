@@ -106,6 +106,7 @@ func (tb *TokenBucket) fill() {
 type Meter struct {
 	mu      sync.Mutex
 	samples []sample
+	total   int64 // cumulative bytes recorded
 }
 
 type sample struct {
@@ -118,12 +119,20 @@ func (m *Meter) Record(n int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := time.Now()
+	m.total += n
 	m.samples = append(m.samples, sample{ts: now, bytes: n})
 	// keep only last 30s
 	cutoff := now.Add(-30 * time.Second)
 	for len(m.samples) > 0 && m.samples[0].ts.Before(cutoff) {
 		m.samples = m.samples[1:]
 	}
+}
+
+// TotalBytes returns the cumulative total bytes recorded.
+func (m *Meter) TotalBytes() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.total
 }
 
 // Rate5s returns the average rate in Mbps over the last 5 seconds.
