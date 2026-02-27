@@ -17,7 +17,7 @@ func (s *taskMetricsStore) Insert(ctx context.Context, m *model.TaskMetrics) err
 		INSERT INTO task_metrics (task_id,agent_id,bytes_total,bytes_delta,rate_mbps_5s,rate_mbps_30s,request_count,error_count,recorded_at)
 		VALUES (?,?,?,?,?,?,?,?,?)`,
 		m.TaskID, m.AgentID, m.BytesTotal, m.BytesDelta,
-		m.RateMbps5s, m.RateMbps30s, m.RequestCount, m.ErrorCount, m.RecordedAt.UTC(),
+		m.RateMbps5s, m.RateMbps30s, m.RequestCount, m.ErrorCount, m.RecordedAt.UTC().Format("2006-01-02 15:04:05"),
 	)
 	return err
 }
@@ -26,7 +26,7 @@ func (s *taskMetricsStore) ListByTask(ctx context.Context, taskID string, from, 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,task_id,agent_id,bytes_total,bytes_delta,rate_mbps_5s,rate_mbps_30s,request_count,error_count,recorded_at
 		FROM task_metrics WHERE task_id=? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at ASC`,
-		taskID, from.UTC(), to.UTC())
+		taskID, from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -62,15 +62,15 @@ type bandwidthStore struct{ db *sql.DB }
 
 func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO bandwidth_samples(agent_id,rate_mbps,recorded_at) VALUES(?,?,?)`,
-		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC())
+		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC().Format("2006-01-02 15:04:05"))
 	return err
 }
 
 func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to time.Time) ([]*model.BandwidthSample, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,agent_id,rate_mbps,recorded_at FROM bandwidth_samples
-		WHERE agent_id=? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at ASC`,
-		agentID, from.UTC(), to.UTC())
+		WHERE agent_id=? AND substr(recorded_at,1,19) BETWEEN ? AND ? ORDER BY recorded_at ASC`,
+		agentID, from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -88,15 +88,16 @@ func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to t
 
 func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
 	// SQLite: bucket by stepSec using integer division of unix timestamp
+	// Use substr to normalize recorded_at to 'YYYY-MM-DD HH:MM:SS' for strftime compatibility
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
-			datetime((strftime('%%s', recorded_at) / %d) * %d, 'unixepoch') as bucket,
+			datetime((strftime('%%s', substr(recorded_at,1,19)) / %d) * %d, 'unixepoch') as bucket,
 			AVG(rate_mbps),
 			MAX(rate_mbps)
 		FROM bandwidth_samples
-		WHERE recorded_at BETWEEN ? AND ?
+		WHERE substr(recorded_at,1,19) BETWEEN ? AND ?
 		GROUP BY bucket ORDER BY bucket ASC`, stepSec, stepSec),
-		from.UTC(), to.UTC())
+		from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 }
 
 func (s *bandwidthStore) PurgeOlderThan(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE recorded_at < ?`, before.UTC())
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE substr(recorded_at,1,19) < ?`, before.UTC().Format("2006-01-02 15:04:05"))
 	return err
 }
 
@@ -124,10 +125,10 @@ func (s *bandwidthStore) TotalCurrent(ctx context.Context, since time.Time) (flo
 	row := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(rate_mbps),0) FROM (
 			SELECT agent_id, rate_mbps FROM bandwidth_samples
-			WHERE recorded_at >= ?
+			WHERE substr(recorded_at,1,19) >= ?
 			GROUP BY agent_id
 			HAVING recorded_at=MAX(recorded_at)
-		)`, since.UTC())
+		)`, since.UTC().Format("2006-01-02 15:04:05"))
 	var total float64
 	return total, row.Scan(&total)
 }
