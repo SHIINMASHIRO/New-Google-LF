@@ -120,6 +120,11 @@ func (s *provisionJobStore) ResetForRetry(ctx context.Context, id string) error 
 	return err
 }
 
+func (s *provisionJobStore) Delete(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM provision_jobs WHERE id=?`, id)
+	return err
+}
+
 func scanProvisionJob(row scanner) (*model.ProvisionJob, error) {
 	j := &model.ProvisionJob{}
 	err := row.Scan(&j.ID, &j.HostIP, &j.SSHPort, &j.SSHUser, &j.AuthType, &j.CredentialRef,

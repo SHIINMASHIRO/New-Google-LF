@@ -54,6 +54,7 @@ type ProvisionJobStore interface {
 	SetAgentID(ctx context.Context, id string, agentID string) error
 	SetFailed(ctx context.Context, id string, step string, reason string) error
 	ResetForRetry(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 }
 
 // BandwidthStore manages bandwidth samples.

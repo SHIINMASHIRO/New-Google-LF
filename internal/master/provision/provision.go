@@ -240,6 +240,11 @@ func (s *Service) GetJob(ctx context.Context, id string) (*model.ProvisionJob, e
 	return s.store.ProvisionJobs().Get(ctx, id)
 }
 
+// DeleteJob deletes a provisioning job record.
+func (s *Service) DeleteJob(ctx context.Context, id string) error {
+	return s.store.ProvisionJobs().Delete(ctx, id)
+}
+
 // CreateCredential stores a credential.
 func (s *Service) CreateCredential(ctx context.Context, req *CredentialRequest) (*model.Credential, error) {
 	c := &model.Credential{

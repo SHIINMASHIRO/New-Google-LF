@@ -23,6 +23,7 @@ export const agentsApi = {
   listProvisionJobs: () => req('GET', '/agents/provision-jobs'),
   getProvisionJob: (id) => req('GET', `/agents/provision-jobs/${id}`),
   retryProvisionJob: (id) => req('POST', `/agents/provision-jobs/${id}/retry`),
+  deleteProvisionJob: (id) => req('DELETE', `/agents/provision-jobs/${id}`),
 }
 
 // ── Tasks ────────────────────────────────────────────────────────────────────

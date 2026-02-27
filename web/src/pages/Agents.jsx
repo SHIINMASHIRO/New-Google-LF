@@ -80,6 +80,19 @@ export default function Agents() {
     }
   }
 
+  const handleDeleteJob = async (jobId) => {
+    if (!confirm('Are you sure you want to delete this provision job?')) return
+    setDeleting(jobId)
+    try {
+      await agentsApi.deleteProvisionJob(jobId)
+      await reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   // Collect all existing IPs (from agents and in-progress jobs) for duplicate check
   const existingIPs = new Set([
     ...agents.map(a => a.ip),
@@ -198,7 +211,7 @@ export default function Agents() {
                             Retry
                           </button>
                         )}
-                        {row.agent && (
+                        {row.agent ? (
                           <button
                             onClick={() => handleDeleteAgent(row.agent.id)}
                             disabled={deleting === row.agent.id}
@@ -206,6 +219,15 @@ export default function Agents() {
                             title="Delete agent"
                           >
                             <Trash2 size={13} className={deleting === row.agent.id ? 'animate-pulse' : ''} />
+                          </button>
+                        ) : row.job && (
+                          <button
+                            onClick={() => handleDeleteJob(row.job.id)}
+                            disabled={deleting === row.job.id}
+                            className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                            title="Delete provision job"
+                          >
+                            <Trash2 size={13} className={deleting === row.job.id ? 'animate-pulse' : ''} />
                           </button>
                         )}
                       </div>
