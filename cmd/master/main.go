@@ -39,6 +39,7 @@ func main() {
 	// ─── Services ─────────────────────────────────────────────────────────────
 	agentSvc := service.NewAgentService(st)
 	taskSvc := service.NewTaskService(st)
+	taskGroupSvc := service.NewTaskGroupService(st, taskSvc)
 	dashSvc := service.NewDashboardService(st)
 	provSvc := provision.NewService(st, masterURL, agentDownloadURL)
 	sched := scheduler.New(st)
@@ -48,9 +49,11 @@ func main() {
 
 	handler.NewAgentHandler(agentSvc).Router(mux)
 	handler.NewTaskHandler(taskSvc).Router(mux)
+	handler.NewTaskGroupHandler(taskGroupSvc).Router(mux)
 	handler.NewDashboardHandler(dashSvc).Router(mux)
 	handler.NewProvisionHandler(provSvc).Router(mux)
 	handler.NewProfileHandler(st).Router(mux)
+	handler.NewURLPoolHandler(st).Router(mux)
 
 	// ─── Health + Metrics ─────────────────────────────────────────────────────
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

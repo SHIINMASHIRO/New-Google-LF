@@ -88,6 +88,17 @@ func (c *Client) MarkRunning(ctx context.Context, taskID string) error {
 	return c.post(ctx, fmt.Sprintf("/api/v1/tasks/%s/run", taskID), nil, nil)
 }
 
+// MarkDone marks a task as completed.
+func (c *Client) MarkDone(ctx context.Context, taskID string) error {
+	return c.post(ctx, fmt.Sprintf("/api/v1/tasks/%s/done", taskID), nil, nil)
+}
+
+// MarkFailed marks a task as failed with a reason.
+func (c *Client) MarkFailed(ctx context.Context, taskID string, reason string) error {
+	body := map[string]string{"reason": reason}
+	return c.post(ctx, fmt.Sprintf("/api/v1/tasks/%s/fail", taskID), body, nil)
+}
+
 // AgentID returns the agent's assigned ID.
 func (c *Client) AgentID() string { return c.agentID }
 

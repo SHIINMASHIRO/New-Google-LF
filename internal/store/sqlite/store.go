@@ -13,14 +13,16 @@ import (
 
 // sqliteStore implements store.Store.
 type sqliteStore struct {
-	db      *sql.DB
-	agents  *agentStore
-	tasks   *taskStore
-	metrics *taskMetricsStore
+	db       *sql.DB
+	agents   *agentStore
+	tasks    *taskStore
+	metrics  *taskMetricsStore
 	profiles *trafficProfileStore
-	jobs    *provisionJobStore
-	bw      *bandwidthStore
-	creds   *credentialStore
+	pools    *urlPoolStore
+	groups   *taskGroupStore
+	jobs     *provisionJobStore
+	bw       *bandwidthStore
+	creds    *credentialStore
 }
 
 // New opens (or creates) a SQLite database and runs migrations.
@@ -39,6 +41,8 @@ func New(dsn string) (store.Store, error) {
 		tasks:    &taskStore{db},
 		metrics:  &taskMetricsStore{db},
 		profiles: &trafficProfileStore{db},
+		pools:    &urlPoolStore{db},
+		groups:   &taskGroupStore{db},
 		jobs:     &provisionJobStore{db},
 		bw:       &bandwidthStore{db},
 		creds:    &credentialStore{db},
@@ -46,10 +50,12 @@ func New(dsn string) (store.Store, error) {
 	return s, nil
 }
 
-func (s *sqliteStore) Agents() store.AgentStore            { return s.agents }
-func (s *sqliteStore) Tasks() store.TaskStore              { return s.tasks }
-func (s *sqliteStore) TaskMetrics() store.TaskMetricsStore { return s.metrics }
+func (s *sqliteStore) Agents() store.AgentStore                   { return s.agents }
+func (s *sqliteStore) Tasks() store.TaskStore                     { return s.tasks }
+func (s *sqliteStore) TaskMetrics() store.TaskMetricsStore        { return s.metrics }
 func (s *sqliteStore) TrafficProfiles() store.TrafficProfileStore { return s.profiles }
+func (s *sqliteStore) URLPools() store.URLPoolStore               { return s.pools }
+func (s *sqliteStore) TaskGroups() store.TaskGroupStore           { return s.groups }
 func (s *sqliteStore) ProvisionJobs() store.ProvisionJobStore     { return s.jobs }
 func (s *sqliteStore) Bandwidth() store.BandwidthStore            { return s.bw }
 func (s *sqliteStore) Credentials() store.CredentialStore         { return s.creds }
@@ -76,10 +82,14 @@ func migrate(db *sql.DB) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS tasks (
 			id TEXT PRIMARY KEY,
+			group_id TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL DEFAULT '',
 			type TEXT NOT NULL DEFAULT 'static',
+			url_pool_id TEXT NOT NULL DEFAULT '',
 			target_url TEXT NOT NULL DEFAULT '',
+			target_urls_json TEXT NOT NULL DEFAULT '[]',
 			agent_id TEXT NOT NULL DEFAULT '',
+			execution_scope TEXT NOT NULL DEFAULT 'single_agent',
 			status TEXT NOT NULL DEFAULT 'pending',
 			target_rate_mbps REAL NOT NULL DEFAULT 0,
 			start_at DATETIME,
@@ -125,6 +135,40 @@ func migrate(db *sql.DB) error {
 			points TEXT NOT NULL DEFAULT '[]',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS url_pools (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL DEFAULT '',
+			type TEXT NOT NULL DEFAULT 'static',
+			description TEXT NOT NULL DEFAULT '',
+			urls_json TEXT NOT NULL DEFAULT '[]',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS task_groups (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			pool_ids_json TEXT NOT NULL DEFAULT '[]',
+			agent_id TEXT NOT NULL DEFAULT '',
+			execution_scope TEXT NOT NULL DEFAULT 'single_agent',
+			target_rate_mbps REAL NOT NULL DEFAULT 0,
+			start_at DATETIME,
+			end_at DATETIME,
+			duration_sec INTEGER NOT NULL DEFAULT 0,
+			total_bytes_target INTEGER NOT NULL DEFAULT 0,
+			total_requests_target INTEGER NOT NULL DEFAULT 0,
+			dispatch_rate_tpm INTEGER NOT NULL DEFAULT 0,
+			dispatch_batch_size INTEGER NOT NULL DEFAULT 1,
+			distribution TEXT NOT NULL DEFAULT 'flat',
+			jitter_pct REAL NOT NULL DEFAULT 0,
+			ramp_up_sec INTEGER NOT NULL DEFAULT 0,
+			ramp_down_sec INTEGER NOT NULL DEFAULT 0,
+			traffic_profile_id TEXT NOT NULL DEFAULT '',
+			concurrent_fragments INTEGER NOT NULL DEFAULT 1,
+			retries INTEGER NOT NULL DEFAULT 3,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
 		`CREATE TABLE IF NOT EXISTS provision_jobs (
 			id TEXT PRIMARY KEY,
 			host_ip TEXT NOT NULL DEFAULT '',
@@ -160,6 +204,18 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("exec %q: %w", stmt[:min(40, len(stmt))], err)
 		}
 	}
+	if err := ensureColumn(db, "tasks", "target_urls_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "tasks", "group_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "tasks", "url_pool_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "tasks", "execution_scope", "TEXT NOT NULL DEFAULT 'single_agent'"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -168,6 +224,35 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func ensureColumn(db *sql.DB, table, column, spec string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("pragma table_info(%s): %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return fmt.Errorf("scan pragma table_info(%s): %w", table, err)
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate pragma table_info(%s): %w", table, err)
+	}
+
+	if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, spec)); err != nil {
+		return fmt.Errorf("alter table %s add column %s: %w", table, column, err)
+	}
+	return nil
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

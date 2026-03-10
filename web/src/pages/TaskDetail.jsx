@@ -20,6 +20,27 @@ function fmtBytes(b) {
   return b + ' B'
 }
 
+function aggregateMetrics(samples) {
+  const buckets = new Map()
+  for (const sample of samples || []) {
+    const recordedAt = new Date(sample.recorded_at)
+    const key = recordedAt.toISOString().slice(0, 19)
+    const current = buckets.get(key) || {
+      ts: recordedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      rate5s: 0,
+      rate30s: 0,
+    }
+    current.rate5s += sample.rate_mbps_5s || 0
+    current.rate30s += sample.rate_mbps_30s || 0
+    buckets.set(key, current)
+  }
+  return Array.from(buckets.values()).map(item => ({
+    ...item,
+    rate5s: +item.rate5s.toFixed(2),
+    rate30s: +item.rate30s.toFixed(2),
+  }))
+}
+
 export default function TaskDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -35,11 +56,7 @@ export default function TaskDetail() {
       const from = new Date(Date.now() - 3600000).toISOString()
       const to = new Date().toISOString()
       const m = await tasksApi.getMetrics(id, from, to)
-      setMetrics((m || []).map(x => ({
-        ts: new Date(x.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        rate5s: +x.rate_mbps_5s.toFixed(2),
-        rate30s: +x.rate_mbps_30s.toFixed(2),
-      })))
+      setMetrics(aggregateMetrics(m))
     } catch (e) {
       setError(e.message)
     }
@@ -106,10 +123,25 @@ export default function TaskDetail() {
             ))}
           </div>
 
-          {/* Target URL */}
+          {/* URL Pool */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-1">Target URL</p>
-            <p className="text-sm text-blue-400 break-all">{task.target_url}</p>
+            <p className="text-xs text-gray-500 mb-3">Pools</p>
+            <div className="space-y-4">
+              {(task.pools || []).map(pool => (
+                <div key={pool.id} className="rounded-lg border border-gray-800 p-3">
+                  <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
+                    <span>{pool.name}</span>
+                    <Badge label={pool.type} />
+                    <span>{pool.urls?.length || 0} URLs</span>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {(pool.urls || []).map((target, index) => (
+                      <p key={`${pool.id}-${index}`} className="text-sm text-blue-400 break-all">{target}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Error */}
@@ -148,8 +180,11 @@ export default function TaskDetail() {
             <h2 className="text-sm font-medium text-white mb-4">Parameters</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-3 text-sm">
               {[
+                ['Pools', task.pools?.length || 0],
+                ['Child Tasks', task.children?.length || 0],
                 ['Agent ID', task.agent_id || '—'],
-                ['Duration', task.duration_sec ? task.duration_sec + 's' : '—'],
+                ['Scope', task.execution_scope || 'single_agent'],
+                ['Duration', task.duration_sec ? (task.duration_sec / 86400).toFixed(2) + 'd' : '—'],
                 ['Total Bytes Target', task.total_bytes_target ? fmtBytes(task.total_bytes_target) : '—'],
                 ['Jitter %', task.jitter_pct],
                 ['Ramp Up', task.ramp_up_sec + 's'],
@@ -164,6 +199,38 @@ export default function TaskDetail() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 className="text-sm font-medium text-white mb-4">Child Tasks</h2>
+            {task.children?.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 text-xs border-b border-gray-800">
+                      <th className="pb-2 text-left font-medium">Name</th>
+                      <th className="pb-2 text-left font-medium">Type</th>
+                      <th className="pb-2 text-left font-medium">Status</th>
+                      <th className="pb-2 text-right font-medium">Rate</th>
+                      <th className="pb-2 text-right font-medium">Downloaded</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {task.children.map(child => (
+                      <tr key={child.id}>
+                        <td className="py-2.5 text-white">{child.name || child.id}</td>
+                        <td className="py-2.5"><Badge label={child.type} /></td>
+                        <td className="py-2.5"><Badge label={child.status} /></td>
+                        <td className="py-2.5 text-right font-mono text-gray-300">{child.target_rate_mbps}</td>
+                        <td className="py-2.5 text-right text-gray-300">{fmtBytes(child.total_bytes_done)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gray-600 text-sm">No child tasks</p>
+            )}
           </div>
         </>
       )}

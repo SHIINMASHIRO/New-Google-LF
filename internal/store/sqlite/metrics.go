@@ -56,6 +56,37 @@ func (s *taskMetricsStore) LatestByTask(ctx context.Context, taskID string) (*mo
 	return m, err
 }
 
+func (s *taskMetricsStore) LatestByTaskAgents(ctx context.Context, taskID string) ([]*model.TaskMetrics, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tm.id,tm.task_id,tm.agent_id,tm.bytes_total,tm.bytes_delta,tm.rate_mbps_5s,tm.rate_mbps_30s,tm.request_count,tm.error_count,tm.recorded_at
+		FROM task_metrics tm
+		INNER JOIN (
+			SELECT agent_id, MAX(recorded_at) AS max_recorded_at
+			FROM task_metrics
+			WHERE task_id=?
+			GROUP BY agent_id
+		) latest
+			ON latest.agent_id = tm.agent_id
+			AND latest.max_recorded_at = tm.recorded_at
+		WHERE tm.task_id=?
+		ORDER BY tm.agent_id ASC`, taskID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*model.TaskMetrics
+	for rows.Next() {
+		m := &model.TaskMetrics{}
+		if err := rows.Scan(&m.ID, &m.TaskID, &m.AgentID, &m.BytesTotal, &m.BytesDelta,
+			&m.RateMbps5s, &m.RateMbps30s, &m.RequestCount, &m.ErrorCount, &m.RecordedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, m)
+	}
+	return list, rows.Err()
+}
+
 // ─── Bandwidth ────────────────────────────────────────────────────────────────
 
 type bandwidthStore struct{ db *sql.DB }

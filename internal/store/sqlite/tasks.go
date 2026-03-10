@@ -12,21 +12,22 @@ import (
 
 type taskStore struct{ db *sql.DB }
 
-const taskCols = `id,name,type,target_url,agent_id,status,target_rate_mbps,
+const taskCols = `id,group_id,name,type,url_pool_id,target_url,target_urls_json,agent_id,execution_scope,status,target_rate_mbps,
 start_at,end_at,duration_sec,total_bytes_target,total_requests_target,
 dispatch_rate_tpm,dispatch_batch_size,distribution,jitter_pct,ramp_up_sec,ramp_down_sec,
 traffic_profile_id,concurrent_fragments,retries,total_bytes_done,error_message,
 dispatched_at,started_at,finished_at,created_at,updated_at`
 
 func (s *taskStore) Create(ctx context.Context, t *model.Task) error {
+	t.Normalize()
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO tasks (id,name,type,target_url,agent_id,status,target_rate_mbps,
+		INSERT INTO tasks (id,group_id,name,type,url_pool_id,target_url,target_urls_json,agent_id,execution_scope,status,target_rate_mbps,
 			start_at,end_at,duration_sec,total_bytes_target,total_requests_target,
 			dispatch_rate_tpm,dispatch_batch_size,distribution,jitter_pct,ramp_up_sec,ramp_down_sec,
 			traffic_profile_id,concurrent_fragments,retries,total_bytes_done,error_message,
 			dispatched_at,started_at,finished_at,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, t.Type, t.TargetURL, t.AgentID, t.Status, t.TargetRateMbps,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.GroupID, t.Name, t.Type, t.URLPoolID, t.TargetURL, t.TargetURLsJSON, t.AgentID, t.ExecutionScope, t.Status, t.TargetRateMbps,
 		nullTime(t.StartAt), nullTime(t.EndAt), t.DurationSec,
 		t.TotalBytesTarget, t.TotalRequestsTarget,
 		t.DispatchRateTpm, t.DispatchBatchSize, t.Distribution,
@@ -46,6 +47,15 @@ func (s *taskStore) Get(ctx context.Context, id string) (*model.Task, error) {
 
 func (s *taskStore) List(ctx context.Context) ([]*model.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTasks(rows)
+}
+
+func (s *taskStore) ListByGroup(ctx context.Context, groupID string) ([]*model.Task, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE group_id=? ORDER BY created_at ASC`, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +110,7 @@ func scanTask(row scanner) (*model.Task, error) {
 	t := &model.Task{}
 	var startAt, endAt, dispatchedAt, startedAt, finishedAt sql.NullTime
 	err := row.Scan(
-		&t.ID, &t.Name, &t.Type, &t.TargetURL, &t.AgentID, &t.Status, &t.TargetRateMbps,
+		&t.ID, &t.GroupID, &t.Name, &t.Type, &t.URLPoolID, &t.TargetURL, &t.TargetURLsJSON, &t.AgentID, &t.ExecutionScope, &t.Status, &t.TargetRateMbps,
 		&startAt, &endAt, &t.DurationSec,
 		&t.TotalBytesTarget, &t.TotalRequestsTarget,
 		&t.DispatchRateTpm, &t.DispatchBatchSize, &t.Distribution,
@@ -121,6 +131,7 @@ func scanTask(row scanner) (*model.Task, error) {
 	t.DispatchedAt = scanNullTime(dispatchedAt)
 	t.StartedAt = scanNullTime(startedAt)
 	t.FinishedAt = scanNullTime(finishedAt)
+	t.Normalize()
 	return t, nil
 }
 

@@ -22,6 +22,7 @@ type TaskStore interface {
 	Create(ctx context.Context, t *model.Task) error
 	Get(ctx context.Context, id string) (*model.Task, error)
 	List(ctx context.Context) ([]*model.Task, error)
+	ListByGroup(ctx context.Context, groupID string) ([]*model.Task, error)
 	ListByAgent(ctx context.Context, agentID string, statuses []model.TaskStatus) ([]*model.Task, error)
 	UpdateStatus(ctx context.Context, id string, status model.TaskStatus) error
 	UpdateStatusWithTime(ctx context.Context, id string, status model.TaskStatus, ts time.Time, field string) error
@@ -35,6 +36,7 @@ type TaskMetricsStore interface {
 	Insert(ctx context.Context, m *model.TaskMetrics) error
 	ListByTask(ctx context.Context, taskID string, from, to time.Time) ([]*model.TaskMetrics, error)
 	LatestByTask(ctx context.Context, taskID string) (*model.TaskMetrics, error)
+	LatestByTaskAgents(ctx context.Context, taskID string) ([]*model.TaskMetrics, error)
 }
 
 // TrafficProfileStore manages traffic profile records.
@@ -42,6 +44,21 @@ type TrafficProfileStore interface {
 	Create(ctx context.Context, p *model.TrafficProfile) error
 	Get(ctx context.Context, id string) (*model.TrafficProfile, error)
 	List(ctx context.Context) ([]*model.TrafficProfile, error)
+}
+
+type URLPoolStore interface {
+	Create(ctx context.Context, p *model.URLPool) error
+	Get(ctx context.Context, id string) (*model.URLPool, error)
+	List(ctx context.Context) ([]*model.URLPool, error)
+	Update(ctx context.Context, p *model.URLPool) error
+	Delete(ctx context.Context, id string) error
+}
+
+type TaskGroupStore interface {
+	Create(ctx context.Context, g *model.TaskGroup) error
+	Get(ctx context.Context, id string) (*model.TaskGroup, error)
+	List(ctx context.Context) ([]*model.TaskGroup, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // ProvisionJobStore manages provisioning job records.
@@ -87,6 +104,8 @@ type Store interface {
 	Tasks() TaskStore
 	TaskMetrics() TaskMetricsStore
 	TrafficProfiles() TrafficProfileStore
+	URLPools() URLPoolStore
+	TaskGroups() TaskGroupStore
 	ProvisionJobs() ProvisionJobStore
 	Bandwidth() BandwidthStore
 	Credentials() CredentialStore

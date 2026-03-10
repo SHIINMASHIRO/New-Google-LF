@@ -156,6 +156,9 @@ func (r *taskRunner) execute(ctx context.Context, task *model.Task, meter *ratel
 	}()
 
 	slog.Info("executing task", "task", task.ID, "type", task.Type, "url", task.TargetURL)
+	if err := r.client.MarkRunning(ctx, task.ID); err != nil {
+		slog.Warn("mark running failed", "task", task.ID, "err", err)
+	}
 
 	rep := reporter.NewTaskReporter(task.ID, r.agentID, r.client, meter)
 	go rep.Run(ctx)
@@ -172,6 +175,9 @@ func (r *taskRunner) execute(ctx context.Context, task *model.Task, meter *ratel
 	case model.TaskTypeStatic:
 		exe := &executor.StaticExecutor{}
 		err = exe.Run(ctx, task, rep.Meter(), progressFn)
+	case model.TaskTypeMixed:
+		exe := &executor.MixedExecutor{}
+		err = exe.Run(ctx, task, rep.Meter(), progressFn)
 	default:
 		slog.Error("unknown task type", "type", task.Type)
 		return
@@ -179,13 +185,18 @@ func (r *taskRunner) execute(ctx context.Context, task *model.Task, meter *ratel
 
 	if err != nil {
 		slog.Error("task failed", "task", task.ID, "err", err)
-		// Report failure
-		_ = r.client.ReportMetrics(context.Background(), &model.TaskMetrics{
-			TaskID:  task.ID,
-			AgentID: r.agentID,
-		})
+		if ctx.Err() == nil {
+			if markErr := r.client.MarkFailed(context.Background(), task.ID, err.Error()); markErr != nil {
+				slog.Warn("mark failed failed", "task", task.ID, "err", markErr)
+			}
+		}
 	} else {
 		slog.Info("task completed", "task", task.ID)
+		if ctx.Err() == nil {
+			if markErr := r.client.MarkDone(context.Background(), task.ID); markErr != nil {
+				slog.Warn("mark done failed", "task", task.ID, "err", markErr)
+			}
+		}
 	}
 }
 

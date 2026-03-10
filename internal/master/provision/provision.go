@@ -157,9 +157,35 @@ func (s *Service) run(jobID string, req *JobRequest) {
 	}
 	logLine("Agent binary downloaded")
 
+	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "install_runtime")
+
+	// Step 5: Install runtime dependencies needed by the agent's YouTube executor.
+	logLine("Ensuring runtime dependencies (python3, yt-dlp, nodejs)...")
+	depsCmd := strings.Join([]string{
+		"if ! command -v python3 >/dev/null 2>&1 || ! command -v yt-dlp >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then",
+		"  if command -v apt-get >/dev/null 2>&1; then",
+		"    sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip nodejs;",
+		"  elif command -v dnf >/dev/null 2>&1; then",
+		"    sudo dnf install -y python3 python3-pip nodejs;",
+		"  elif command -v yum >/dev/null 2>&1; then",
+		"    sudo yum install -y python3 python3-pip nodejs;",
+		"  elif command -v apk >/dev/null 2>&1; then",
+		"    sudo apk add --no-cache python3 py3-pip nodejs;",
+		"  else",
+		"    echo unsupported package manager >&2; exit 1;",
+		"  fi;",
+		"fi",
+		"&& (command -v yt-dlp >/dev/null 2>&1 || sudo python3 -m pip install --upgrade --break-system-packages yt-dlp || sudo python3 -m pip install --upgrade yt-dlp)",
+	}, " ")
+	if out, err := runSSH(client, depsCmd); err != nil {
+		fail("install_runtime", fmt.Sprintf("dependency install failed: %s; output: %s", err, out))
+		return
+	}
+	logLine("Runtime dependencies ready")
+
 	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "install_service")
 
-	// Step 5: Install systemd service
+	// Step 6: Install systemd service
 	logLine("Installing systemd service...")
 	unitContent := fmt.Sprintf(systemdTemplate, req.HostIP, s.masterURL)
 	installCmds := []string{
@@ -178,7 +204,7 @@ func (s *Service) run(jobID string, req *JobRequest) {
 
 	_ = s.store.ProvisionJobs().UpdateStatus(ctx, jobID, model.ProvisionStatusRunning, "health_check")
 
-	// Step 6: Wait for agent to appear online (max 60s)
+	// Step 7: Wait for agent to appear online (max 60s)
 	logLine("Waiting for agent to come online (max 60s)...")
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {

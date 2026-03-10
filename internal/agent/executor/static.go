@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aven/ngoogle/internal/model"
 	"github.com/aven/ngoogle/internal/master/scheduler"
+	"github.com/aven/ngoogle/internal/model"
 	"github.com/aven/ngoogle/pkg/ratelimit"
 )
 
@@ -25,6 +25,11 @@ type StaticExecutor struct{}
 
 // Run downloads the target URL respecting the rate limit and context.
 func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratelimit.Meter, progress func(int64)) error {
+	task.Normalize()
+	urls := task.URLs()
+	if len(urls) == 0 {
+		return fmt.Errorf("target_url is required for static task")
+	}
 	tb := ratelimit.New(task.TargetRateMbps, 2.0)
 
 	startedAt := time.Now()
@@ -75,7 +80,8 @@ func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratel
 		tb.SetRate(effectiveRate)
 
 		// Download
-		n, err := downloadOnce(reqCtx, task.TargetURL, tb)
+		targetURL := urls[int(reqCount)%len(urls)]
+		n, err := downloadOnce(reqCtx, targetURL, tb)
 		if err != nil {
 			if reqCtx.Err() != nil {
 				return nil // context cancelled — normal stop

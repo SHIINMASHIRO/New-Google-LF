@@ -28,18 +28,26 @@ export const agentsApi = {
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
 export const tasksApi = {
-  list: () => req('GET', '/tasks'),
-  get: (id) => req('GET', `/tasks/${id}`),
-  create: (data) => req('POST', '/tasks', data),
-  dispatch: (id) => req('POST', `/tasks/${id}/dispatch`),
-  stop: (id) => req('POST', `/tasks/${id}/stop`),
-  getMetrics: (id, from, to) => req('GET', `/tasks/${id}/metrics?from=${from}&to=${to}`),
+  list: () => req('GET', '/task-groups'),
+  get: (id) => req('GET', `/task-groups/${id}`),
+  create: (data) => req('POST', '/task-groups', data),
+  dispatch: (id) => req('POST', `/task-groups/${id}/dispatch`),
+  stop: (id) => req('POST', `/task-groups/${id}/stop`),
+  getMetrics: (id, from, to) => req('GET', `/task-groups/${id}/metrics?from=${from}&to=${to}`),
 }
 
 // ── Traffic Profiles ─────────────────────────────────────────────────────────
 export const profilesApi = {
   list: () => req('GET', '/traffic-profiles'),
   create: (data) => req('POST', '/traffic-profiles', data),
+}
+
+export const urlPoolsApi = {
+  list: () => req('GET', '/url-pools'),
+  get: (id) => req('GET', `/url-pools/${id}`),
+  create: (data) => req('POST', '/url-pools', data),
+  update: (id, data) => req('PUT', `/url-pools/${id}`, data),
+  delete: (id) => req('DELETE', `/url-pools/${id}`),
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

@@ -25,6 +25,9 @@ func (h *TaskHandler) Router(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tasks/{id}", h.Get)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/dispatch", h.Dispatch)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/stop", h.Stop)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/run", h.MarkRunning)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/done", h.MarkDone)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/fail", h.MarkFailed)
 	mux.HandleFunc("POST /api/v1/tasks/{id}/metrics", h.ReportMetrics)
 	mux.HandleFunc("GET /api/v1/tasks/{id}/metrics", h.GetMetrics)
 	mux.HandleFunc("GET /api/v1/agents/{agent_id}/tasks/pull", h.PullTasks)
@@ -84,6 +87,45 @@ func (h *TaskHandler) Stop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+// MarkRunning handles POST /api/v1/tasks/{id}/run
+func (h *TaskHandler) MarkRunning(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.svc.MarkRunning(r.Context(), id); err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "running"})
+}
+
+// MarkDone handles POST /api/v1/tasks/{id}/done
+func (h *TaskHandler) MarkDone(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.svc.MarkDone(r.Context(), id); err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "done"})
+}
+
+// MarkFailed handles POST /api/v1/tasks/{id}/fail
+func (h *TaskHandler) MarkFailed(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if r.ContentLength > 0 {
+		if err := decode(r, &req); err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := h.svc.MarkFailed(r.Context(), id, req.Reason); err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "failed"})
 }
 
 // ReportMetrics handles POST /api/v1/tasks/{id}/metrics

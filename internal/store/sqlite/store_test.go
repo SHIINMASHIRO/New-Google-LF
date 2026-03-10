@@ -67,15 +67,16 @@ func TestTaskCreateAndGet(t *testing.T) {
 	task := &model.Task{
 		ID:             "task1",
 		Name:           "test",
-		Type:           model.TaskTypeStatic,
-		TargetURL:      "https://example.com",
-		AgentID:        "agent1",
+		Type:           model.TaskTypeMixed,
+		AgentID:        "",
+		ExecutionScope: model.TaskExecutionScopeGlobal,
 		Status:         model.TaskStatusPending,
 		TargetRateMbps: 10,
 		Distribution:   model.DistributionFlat,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
+	task.SetTargetURLs([]string{"https://example.com/a", "https://www.youtube.com/watch?v=test"})
 
 	if err := st.Tasks().Create(ctx, task); err != nil {
 		t.Fatalf("create task: %v", err)
@@ -85,11 +86,153 @@ func TestTaskCreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get task: %v", err)
 	}
-	if got.TargetURL != "https://example.com" {
-		t.Errorf("expected example.com, got %s", got.TargetURL)
+	if got.TargetURL != "https://example.com/a" {
+		t.Errorf("expected first URL, got %s", got.TargetURL)
 	}
 	if got.Status != model.TaskStatusPending {
 		t.Errorf("expected pending, got %s", got.Status)
+	}
+	if got.ExecutionScope != model.TaskExecutionScopeGlobal {
+		t.Errorf("expected global scope, got %s", got.ExecutionScope)
+	}
+	if len(got.TargetURLs) != 2 {
+		t.Fatalf("expected 2 target URLs, got %d", len(got.TargetURLs))
+	}
+}
+
+func TestURLPoolCreateAndGet(t *testing.T) {
+	st, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	pool := &model.URLPool{
+		ID:          "pool1",
+		Name:        "yt-pool",
+		Type:        model.URLPoolTypeYoutube,
+		Description: "videos",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	pool.SetURLs([]string{"https://youtu.be/a", "https://youtu.be/b"})
+
+	if err := st.URLPools().Create(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	got, err := st.URLPools().Get(ctx, "pool1")
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if got.Type != model.URLPoolTypeYoutube {
+		t.Fatalf("expected youtube pool, got %s", got.Type)
+	}
+	if len(got.URLs) != 2 {
+		t.Fatalf("expected 2 urls, got %d", len(got.URLs))
+	}
+}
+
+func TestURLPoolUpdate(t *testing.T) {
+	st, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	pool := &model.URLPool{
+		ID:          "pool-update",
+		Name:        "before",
+		Type:        model.URLPoolTypeStatic,
+		Description: "before",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	pool.SetURLs([]string{"https://example.com/a"})
+	if err := st.URLPools().Create(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	pool.Name = "after"
+	pool.Description = "after"
+	pool.UpdatedAt = now.Add(time.Minute)
+	pool.SetURLs([]string{"https://example.com/b", "https://example.com/c"})
+	if err := st.URLPools().Update(ctx, pool); err != nil {
+		t.Fatalf("update pool: %v", err)
+	}
+
+	got, err := st.URLPools().Get(ctx, "pool-update")
+	if err != nil {
+		t.Fatalf("get updated pool: %v", err)
+	}
+	if got.Name != "after" || got.Description != "after" {
+		t.Fatalf("unexpected updated metadata: %+v", got)
+	}
+	if len(got.URLs) != 2 || got.URLs[0] != "https://example.com/b" {
+		t.Fatalf("unexpected updated urls: %+v", got.URLs)
+	}
+}
+
+func TestTaskGroupCreateAndTaskListByGroup(t *testing.T) {
+	st, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	group := &model.TaskGroup{
+		ID:             "group1",
+		Name:           "group",
+		ExecutionScope: model.TaskExecutionScopeGlobal,
+		TargetRateMbps: 100,
+		Distribution:   model.DistributionFlat,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	group.SetPoolIDs([]string{"pool-a", "pool-b"})
+	if err := st.TaskGroups().Create(ctx, group); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	task := &model.Task{
+		ID:             "task-group-child",
+		GroupID:        "group1",
+		Name:           "child",
+		Type:           model.TaskTypeStatic,
+		Status:         model.TaskStatusPending,
+		TargetRateMbps: 10,
+		Distribution:   model.DistributionFlat,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	task.SetTargetURLs([]string{"https://example.com/a"})
+	if err := st.Tasks().Create(ctx, task); err != nil {
+		t.Fatalf("create child task: %v", err)
+	}
+
+	gotGroup, err := st.TaskGroups().Get(ctx, "group1")
+	if err != nil {
+		t.Fatalf("get group: %v", err)
+	}
+	if len(gotGroup.PoolIDs) != 2 {
+		t.Fatalf("expected 2 pool ids, got %d", len(gotGroup.PoolIDs))
+	}
+
+	children, err := st.Tasks().ListByGroup(ctx, "group1")
+	if err != nil {
+		t.Fatalf("list by group: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("expected 1 child task, got %d", len(children))
+	}
+	if children[0].GroupID != "group1" {
+		t.Fatalf("expected child task group1, got %s", children[0].GroupID)
 	}
 }
 
@@ -175,5 +318,40 @@ func TestMetricsInsertAndList(t *testing.T) {
 	}
 	if list[0].RateMbps5s != 8.0 {
 		t.Errorf("expected 8.0 Mbps, got %f", list[0].RateMbps5s)
+	}
+}
+
+func TestMetricsLatestByTaskAgents(t *testing.T) {
+	st, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	metrics := []*model.TaskMetrics{
+		{TaskID: "t1", AgentID: "a1", BytesTotal: 100, RecordedAt: now.Add(-10 * time.Second)},
+		{TaskID: "t1", AgentID: "a1", BytesTotal: 200, RecordedAt: now},
+		{TaskID: "t1", AgentID: "a2", BytesTotal: 300, RecordedAt: now.Add(-5 * time.Second)},
+	}
+	for _, m := range metrics {
+		if err := st.TaskMetrics().Insert(ctx, m); err != nil {
+			t.Fatalf("insert metrics: %v", err)
+		}
+	}
+
+	latest, err := st.TaskMetrics().LatestByTaskAgents(ctx, "t1")
+	if err != nil {
+		t.Fatalf("latest by agents: %v", err)
+	}
+	if len(latest) != 2 {
+		t.Fatalf("expected 2 latest metrics, got %d", len(latest))
+	}
+	if latest[0].AgentID != "a1" || latest[0].BytesTotal != 200 {
+		t.Fatalf("unexpected latest for a1: %+v", latest[0])
+	}
+	if latest[1].AgentID != "a2" || latest[1].BytesTotal != 300 {
+		t.Fatalf("unexpected latest for a2: %+v", latest[1])
 	}
 }
