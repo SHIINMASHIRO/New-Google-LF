@@ -8,48 +8,35 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString()
 }
 
-// Map provision status to display-friendly label
 function provisionLabel(status) {
   const map = { pending: 'provisioning', running: 'provisioning', success: 'online', failed: 'failed' }
   return map[status] || status
 }
 
 export default function Agents() {
-  const [agents, setAgents] = useState([])
-  const [jobs, setJobs] = useState([])
-  const [creds, setCreds] = useState([])
-  const [showModal, setShowModal] = useState(false)
-  const [error, setError] = useState(null)
+  const [agents,      setAgents]      = useState([])
+  const [jobs,        setJobs]        = useState([])
+  const [creds,       setCreds]       = useState([])
+  const [showModal,   setShowModal]   = useState(false)
+  const [error,       setError]       = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
-  const [retrying, setRetrying] = useState(null)
-  const [deleting, setDeleting] = useState(null)
+  const [retrying,    setRetrying]    = useState(null)
+  const [deleting,    setDeleting]    = useState(null)
 
   const reload = async () => {
     try {
       const [a, j, c] = await Promise.all([
-        agentsApi.list(),
-        agentsApi.listProvisionJobs(),
-        credentialsApi.list(),
+        agentsApi.list(), agentsApi.listProvisionJobs(), credentialsApi.list(),
       ])
-      setAgents(a || [])
-      setJobs(j || [])
-      setCreds(c || [])
-    } catch (e) {
-      setError(e.message)
-    }
+      setAgents(a || []); setJobs(j || []); setCreds(c || [])
+    } catch (e) { setError(e.message) }
   }
 
   useEffect(() => { reload(); const t = setInterval(reload, 10000); return () => clearInterval(t) }, [])
 
-  // IPs that already have a registered agent
   const agentIPs = new Set(agents.map(a => a.ip))
-
-  // Rows: real agents first, then provision-only jobs (exclude jobs whose IP already has a registered agent)
   const rows = [
-    ...agents.map(a => {
-      const job = jobs.find(j => j.agent_id === a.id)
-      return { type: 'agent', key: a.id, agent: a, job }
-    }),
+    ...agents.map(a => ({ type: 'agent', key: a.id, agent: a, job: jobs.find(j => j.agent_id === a.id) })),
     ...jobs
       .filter(j => !j.agent_id && !agentIPs.has(j.host_ip) && (j.status === 'failed' || j.status === 'pending' || j.status === 'running'))
       .map(j => ({ type: 'provision', key: j.id, agent: null, job: j })),
@@ -57,177 +44,176 @@ export default function Agents() {
 
   const handleRetry = async (jobId) => {
     setRetrying(jobId)
-    try {
-      await agentsApi.retryProvisionJob(jobId)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setRetrying(null)
-    }
+    try { await agentsApi.retryProvisionJob(jobId); await reload() }
+    catch (err) { setError(err.message) }
+    finally { setRetrying(null) }
   }
 
   const handleDeleteAgent = async (id) => {
-    if (!confirm('Are you sure you want to delete this agent?')) return
+    if (!confirm('Delete this agent?')) return
     setDeleting(id)
-    try {
-      await agentsApi.delete(id)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setDeleting(null)
-    }
+    try { await agentsApi.delete(id); await reload() }
+    catch (err) { setError(err.message) }
+    finally { setDeleting(null) }
   }
 
   const handleDeleteJob = async (jobId) => {
-    if (!confirm('Are you sure you want to delete this provision job?')) return
+    if (!confirm('Delete this provision job?')) return
     setDeleting(jobId)
-    try {
-      await agentsApi.deleteProvisionJob(jobId)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setDeleting(null)
-    }
+    try { await agentsApi.deleteProvisionJob(jobId); await reload() }
+    catch (err) { setError(err.message) }
+    finally { setDeleting(null) }
   }
 
-  // Collect all existing IPs (from agents and in-progress jobs) for duplicate check
   const existingIPs = new Set([
     ...agents.map(a => a.ip),
     ...jobs.filter(j => j.status === 'pending' || j.status === 'running').map(j => j.host_ip),
   ])
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <h1 className="text-xl font-semibold text-white">Agents</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{agents.length} registered agents</p>
+          <span className="label" style={{ display: 'block', marginBottom: 6 }}>Infrastructure</span>
+          <h1 className="page-title">Agents</h1>
         </div>
-        <div className="flex gap-2">
-          <button onClick={reload} className="p-2 rounded-lg bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
-            <RefreshCw size={15} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={reload} className="btn-secondary" style={{ padding: '9px 12px' }}>
+            <RefreshCw size={14} />
           </button>
-          <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm transition-colors">
-            <Plus size={15} /> Add Agent
+          <button onClick={() => setShowModal(true)} className="btn-primary">
+            <Plus size={14} /> Add Agent
           </button>
         </div>
       </div>
 
-      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">{error}<button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-300">✕</button></div>}
+      {error && (
+        <div className="error-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {error}
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
 
-      {/* Agent Table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-800 bg-gray-800/50">
-            <tr className="text-gray-400 text-xs">
-              <th className="px-4 py-3 text-left font-medium w-8"></th>
-              <th className="px-4 py-3 text-left font-medium">Host / Hostname</th>
-              <th className="px-4 py-3 text-left font-medium">IP</th>
-              <th className="px-4 py-3 text-left font-medium">Status</th>
-              <th className="px-4 py-3 text-left font-medium">Step</th>
-              <th className="px-4 py-3 text-left font-medium">Rate</th>
-              <th className="px-4 py-3 text-left font-medium">Last Seen</th>
-              <th className="px-4 py-3 text-left font-medium w-28">Actions</th>
+      <div className="card" style={{ overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead className="tbl-head">
+            <tr>
+              <th style={{ width: 36 }}></th>
+              <th>Host / Hostname</th>
+              <th>IP Address</th>
+              <th>Status</th>
+              <th>Step</th>
+              <th>Rate</th>
+              <th>Last Seen</th>
+              <th style={{ width: 120 }}>Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800/50">
+          <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600">
-                No agents yet. Click "Add Agent" to provision one.
-              </td></tr>
+              <tr><td colSpan={8}><div className="empty">No agents yet — click "Add Agent" to provision one</div></td></tr>
             ) : rows.map(row => {
-              const isExpanded = expandedRow === row.key
-              const isFailed = row.job?.status === 'failed'
+              const isExpanded    = expandedRow === row.key
+              const isFailed      = row.job?.status === 'failed'
               const isProvisioning = row.job?.status === 'running' || row.job?.status === 'pending'
+              const clickable     = !!row.job?.log
 
               return (
                 <React.Fragment key={row.key}>
                   <tr
-                    className={`hover:bg-gray-800/30 transition-colors ${isFailed ? 'bg-red-500/5' : ''} ${row.job?.log ? 'cursor-pointer' : ''}`}
-                    onClick={() => row.job?.log && setExpandedRow(isExpanded ? null : row.key)}
+                    className="tbl-row"
+                    style={{
+                      cursor: clickable ? 'pointer' : 'default',
+                      background: isFailed ? 'rgba(181,60,43,0.03)' : undefined,
+                    }}
+                    onClick={() => clickable && setExpandedRow(isExpanded ? null : row.key)}
                   >
-                    <td className="px-4 py-3">
-                      {row.job?.log ? (
-                        isExpanded
-                          ? <ChevronUp size={14} className="text-gray-500" />
-                          : <ChevronDown size={14} className="text-gray-500" />
-                      ) : (
-                        <Server size={14} className="text-gray-600" />
-                      )}
+                    <td style={{ padding: '13px 12px' }}>
+                      {clickable
+                        ? (isExpanded
+                          ? <ChevronUp  size={14} style={{ color: 'var(--text-muted)' }} />
+                          : <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />)
+                        : <Server size={14} style={{ color: 'var(--text-muted)' }} />
+                      }
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {row.agent ? (
                         <div>
-                          <span className="text-white">{row.agent.hostname}</span>
-                          <span className="text-gray-600 text-xs ml-2 font-mono">{row.agent.id.slice(0, 8)}</span>
+                          <span style={{ fontWeight: 500 }}>{row.agent.hostname}</span>
+                          <span className="mono" style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 11 }}>
+                            {row.agent.id.slice(0, 8)}
+                          </span>
                         </div>
                       ) : (
-                        <span className="text-gray-400">{row.job?.host_ip}</span>
+                        <span style={{ color: 'var(--text-dim)' }}>{row.job?.host_ip}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">
-                      {row.agent?.ip || row.job?.host_ip}
+                    <td>
+                      <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12 }}>
+                        {row.agent?.ip || row.job?.host_ip}
+                      </span>
                     </td>
-                    <td className="px-4 py-3">
-                      {row.agent ? (
-                        <Badge label={row.agent.status} />
-                      ) : (
-                        <Badge label={provisionLabel(row.job?.status)} />
-                      )}
+                    <td>
+                      {row.agent
+                        ? <Badge label={row.agent.status} />
+                        : <Badge label={provisionLabel(row.job?.status)} />}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td>
                       {isProvisioning ? (
-                        <span className="flex items-center gap-1.5">
-                          <Loader2 size={12} className="animate-spin text-yellow-400" />
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--amber)' }}>
+                          <Loader2 size={12} style={{ animation: 'spin 1.2s linear infinite' }} />
                           {row.job?.current_step}
                         </span>
                       ) : isFailed ? (
-                        <span className="text-red-400">{row.job?.failed_step || row.job?.current_step}</span>
-                      ) : row.agent ? (
-                        <span className="text-gray-600">—</span>
+                        <span style={{ fontSize: 12, color: 'var(--red)' }}>
+                          {row.job?.failed_step || row.job?.current_step}
+                        </span>
                       ) : (
-                        <span className="text-gray-600">{row.job?.current_step}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-green-400">
-                      {row.agent ? `${row.agent.current_rate_mbps.toFixed(2)} Mbps` : '—'}
+                    <td>
+                      {row.agent ? (
+                        <span className="mono" style={{ color: 'var(--green)', fontWeight: 500, fontSize: 12 }}>
+                          {row.agent.current_rate_mbps.toFixed(2)} Mbps
+                        </span>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {row.agent ? fmtDate(row.agent.last_heartbeat) : fmtDate(row.job?.created_at)}
+                    <td>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {row.agent ? fmtDate(row.agent.last_heartbeat) : fmtDate(row.job?.created_at)}
+                      </span>
                     </td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1">
+                    <td onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {isFailed && (
                           <button
                             onClick={() => handleRetry(row.job.id)}
                             disabled={retrying === row.job.id}
-                            className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 text-xs hover:bg-yellow-600/30 transition-colors disabled:opacity-50"
-                            title="Retry provisioning"
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', borderRadius: 6,
+                              background: 'var(--amber-dim)',
+                              border: '1px solid rgba(157,104,32,0.2)',
+                              color: 'var(--amber)', fontSize: 12, fontWeight: 500,
+                              cursor: 'pointer', transition: 'opacity 0.12s',
+                            }}
                           >
-                            <RotateCw size={12} className={retrying === row.job.id ? 'animate-spin' : ''} />
+                            <RotateCw size={11} style={{ animation: retrying === row.job.id ? 'spin 1.2s linear infinite' : 'none' }} />
                             Retry
                           </button>
                         )}
-                        {row.agent ? (
+                        {(row.agent || row.job) && (
                           <button
-                            onClick={() => handleDeleteAgent(row.agent.id)}
-                            disabled={deleting === row.agent.id}
-                            className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                            title="Delete agent"
+                            onClick={() => row.agent ? handleDeleteAgent(row.agent.id) : handleDeleteJob(row.job.id)}
+                            disabled={deleting === (row.agent?.id || row.job?.id)}
+                            style={{
+                              padding: '6px', borderRadius: 6, background: 'none', border: 'none',
+                              color: 'var(--text-muted)', cursor: 'pointer', transition: 'color 0.12s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
                           >
-                            <Trash2 size={13} className={deleting === row.agent.id ? 'animate-pulse' : ''} />
-                          </button>
-                        ) : row.job && (
-                          <button
-                            onClick={() => handleDeleteJob(row.job.id)}
-                            disabled={deleting === row.job.id}
-                            className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                            title="Delete provision job"
-                          >
-                            <Trash2 size={13} className={deleting === row.job.id ? 'animate-pulse' : ''} />
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </div>
@@ -235,8 +221,20 @@ export default function Agents() {
                   </tr>
                   {isExpanded && row.job?.log && (
                     <tr>
-                      <td colSpan={8} className="px-4 pb-3 pt-0">
-                        <pre className="bg-gray-950 rounded-lg p-3 text-xs text-gray-400 font-mono overflow-auto max-h-48 whitespace-pre-wrap">
+                      <td colSpan={8} style={{ padding: '0 16px 16px', borderBottom: '1px solid var(--border)' }}>
+                        <pre style={{
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 8,
+                          padding: '12px 16px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 11,
+                          color: 'var(--text-dim)',
+                          overflow: 'auto',
+                          maxHeight: 200,
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: 1.7,
+                        }}>
                           {row.job.log}
                         </pre>
                       </td>
@@ -249,89 +247,129 @@ export default function Agents() {
         </table>
       </div>
 
-      {/* Modal */}
-      {showModal && <ProvisionModal creds={creds} existingIPs={existingIPs} onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); reload() }} />}
+      {showModal && (
+        <ProvisionModal
+          creds={creds}
+          existingIPs={existingIPs}
+          onClose={() => setShowModal(false)}
+          onSuccess={() => { setShowModal(false); reload() }}
+        />
+      )}
     </div>
   )
 }
 
 function ProvisionModal({ creds, existingIPs, onClose, onSuccess }) {
-  const [form, setForm] = useState({ host_ip: '', ssh_port: 22, ssh_user: 'root', auth_type: 'key', credential_ref: '' })
+  const [form, setForm]       = useState({ host_ip: '', ssh_port: 22, ssh_user: 'root', auth_type: 'key', credential_ref: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
+  const [error, setError]     = useState(null)
   const ipDuplicate = form.host_ip && existingIPs.has(form.host_ip)
 
   const submit = async e => {
     e.preventDefault()
-    if (ipDuplicate) {
-      setError(`Agent with IP ${form.host_ip} already exists`)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      await agentsApi.provision({ ...form, ssh_port: +form.ssh_port })
-      onSuccess()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+    if (ipDuplicate) { setError(`IP ${form.host_ip} already exists`); return }
+    setLoading(true); setError(null)
+    try { await agentsApi.provision({ ...form, ssh_port: +form.ssh_port }); onSuccess() }
+    catch (err) { setError(err.message) }
+    finally { setLoading(false) }
   }
 
   return (
     <Modal title="Add Agent via SSH" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Host IP" required>
-            <input required className={`input ${ipDuplicate ? 'border-red-500 focus:border-red-500' : ''}`} value={form.host_ip} onChange={e => setForm(f => ({ ...f, host_ip: e.target.value }))} />
-            {ipDuplicate && <p className="text-red-400 text-xs mt-1">This IP already exists</p>}
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Host IP">
+            <input required className="input" value={form.host_ip}
+              onChange={e => setForm(f => ({ ...f, host_ip: e.target.value }))}
+              style={ipDuplicate ? { borderColor: 'var(--red)' } : {}} />
+            {ipDuplicate && <span style={{ fontSize: 11, color: 'var(--red)' }}>This IP already exists</span>}
           </Field>
-          <Field label="SSH Port"><input type="number" className="input" value={form.ssh_port} onChange={e => setForm(f => ({ ...f, ssh_port: e.target.value }))} /></Field>
+          <Field label="SSH Port">
+            <input type="number" className="input" value={form.ssh_port}
+              onChange={e => setForm(f => ({ ...f, ssh_port: e.target.value }))} />
+          </Field>
         </div>
-        <Field label="SSH User"><input required className="input" value={form.ssh_user} onChange={e => setForm(f => ({ ...f, ssh_user: e.target.value }))} /></Field>
+        <Field label="SSH User">
+          <input required className="input" value={form.ssh_user}
+            onChange={e => setForm(f => ({ ...f, ssh_user: e.target.value }))} />
+        </Field>
         <Field label="Auth Type">
-          <select className="input" value={form.auth_type} onChange={e => setForm(f => ({ ...f, auth_type: e.target.value }))}>
+          <select className="input" value={form.auth_type}
+            onChange={e => setForm(f => ({ ...f, auth_type: e.target.value }))}>
             <option value="key">SSH Key</option>
             <option value="password">Password</option>
           </select>
         </Field>
         <Field label="Credential">
-          <select required className="input" value={form.credential_ref} onChange={e => setForm(f => ({ ...f, credential_ref: e.target.value }))}>
-            <option value="">— select credential —</option>
+          <select required className="input" value={form.credential_ref}
+            onChange={e => setForm(f => ({ ...f, credential_ref: e.target.value }))}>
+            <option value="">— Select credential —</option>
             {creds.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
           </select>
         </Field>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-        <div className="flex gap-2 justify-end pt-2">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" disabled={loading || ipDuplicate} className="btn-primary">{loading ? 'Provisioning...' : 'Provision'}</button>
-        </div>
+        {error && <div className="error-bar">{error}</div>}
+        <ModalFooter onClose={onClose} loading={loading} disabled={ipDuplicate} label="Provision" />
       </form>
     </Modal>
   )
 }
 
+/* ── Shared ── */
 function Modal({ title, onClose, children }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
+    <div
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(61,57,41,0.4)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 50, padding: 20,
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: 'var(--elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 14,
+        width: '100%', maxWidth: 460,
+        boxShadow: 'var(--shadow-lg)',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '18px 22px', borderBottom: '1px solid var(--border)',
+        }}>
+          <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, color: 'var(--text)' }}>
+            {title}
+          </h3>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--text-muted)', fontSize: 18, lineHeight: 1,
+            width: 28, height: 28, borderRadius: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>✕</button>
         </div>
-        <div className="p-5">{children}</div>
+        <div style={{ padding: '20px 22px' }}>{children}</div>
       </div>
     </div>
   )
 }
 
-function Field({ label, required, children }) {
+function Field({ label, children }) {
   return (
-    <label className="block">
-      <span className="text-xs text-gray-400 font-medium mb-1 block">{label}{required && ' *'}</span>
+    <div className="field">
+      <label className="field-label">{label}</label>
       {children}
-    </label>
+    </div>
+  )
+}
+
+function ModalFooter({ onClose, loading, disabled, label = 'Submit' }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
+      <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+      <button type="submit" disabled={loading || disabled} className="btn-primary">
+        {loading ? 'Processing...' : label}
+      </button>
+    </div>
   )
 }

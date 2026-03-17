@@ -1,26 +1,48 @@
 import React from 'react'
 
 const variants = {
-  online:     'bg-green-500/20 text-green-400 border-green-500/30',
-  offline:    'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  running:    'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  pending:    'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  dispatched: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  done:       'bg-green-500/20 text-green-400 border-green-500/30',
-  failed:     'bg-red-500/20 text-red-400 border-red-500/30',
-  stopped:    'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  success:    'bg-green-500/20 text-green-400 border-green-500/30',
-  provisioning: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  'ssh key':  'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  password:   'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  youtube:    'bg-red-500/20 text-red-400 border-red-500/30',
-  static:     'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  online:       { color: 'var(--green)',  bg: 'var(--green-dim)',  pulse: true },
+  offline:      { color: 'var(--text-muted)', bg: 'rgba(170,168,159,0.12)', pulse: false },
+  running:      { color: 'var(--accent-dark)', bg: 'var(--accent-dim)', pulse: true },
+  pending:      { color: 'var(--amber)',  bg: 'var(--amber-dim)',  pulse: false },
+  dispatched:   { color: 'var(--purple)', bg: 'var(--purple-dim)', pulse: true },
+  done:         { color: 'var(--green)',  bg: 'var(--green-dim)',  pulse: false },
+  failed:       { color: 'var(--red)',    bg: 'var(--red-dim)',    pulse: false },
+  stopped:      { color: 'var(--text-muted)', bg: 'rgba(170,168,159,0.12)', pulse: false },
+  success:      { color: 'var(--green)',  bg: 'var(--green-dim)',  pulse: false },
+  provisioning: { color: 'var(--amber)',  bg: 'var(--amber-dim)',  pulse: true },
+  'ssh key':    { color: 'var(--blue)',   bg: 'var(--blue-dim)',   pulse: false },
+  password:     { color: 'var(--purple)', bg: 'var(--purple-dim)', pulse: false },
+  youtube:      { color: 'var(--red)',    bg: 'var(--red-dim)',    pulse: false },
+  static:       { color: 'var(--blue)',   bg: 'var(--blue-dim)',   pulse: false },
 }
 
 export default function Badge({ label }) {
-  const cls = variants[label?.toLowerCase()] ?? 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+  const v = variants[label?.toLowerCase()] ?? { color: 'var(--text-muted)', bg: 'rgba(170,168,159,0.12)', pulse: false }
+
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${cls}`}>
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      padding: '3px 9px',
+      borderRadius: 20,
+      background: v.bg,
+      fontFamily: 'var(--font-ui)',
+      fontSize: 11,
+      fontWeight: 500,
+      color: v.color,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        display: 'inline-block',
+        width: 5,
+        height: 5,
+        borderRadius: '50%',
+        background: v.color,
+        flexShrink: 0,
+        animation: v.pulse ? 'pulse-live 2.5s ease-in-out infinite' : 'none',
+      }} />
       {label}
     </span>
   )

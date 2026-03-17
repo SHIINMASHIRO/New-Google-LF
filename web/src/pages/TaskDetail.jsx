@@ -7,11 +7,7 @@ import {
 import { tasksApi } from '../api/index.js'
 import Badge from '../components/Badge.jsx'
 
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString()
-}
-
+function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleString() }
 function fmtBytes(b) {
   if (!b) return '0 B'
   if (b > 1e9) return (b / 1e9).toFixed(2) + ' GB'
@@ -22,77 +18,97 @@ function fmtBytes(b) {
 
 function aggregateMetrics(samples) {
   const buckets = new Map()
-  for (const sample of samples || []) {
-    const recordedAt = new Date(sample.recorded_at)
-    const key = recordedAt.toISOString().slice(0, 19)
-    const current = buckets.get(key) || {
-      ts: recordedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      rate5s: 0,
-      rate30s: 0,
+  for (const s of samples || []) {
+    const key = new Date(s.recorded_at).toISOString().slice(0, 19)
+    const cur = buckets.get(key) || {
+      ts: new Date(s.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      rate5s: 0, rate30s: 0,
     }
-    current.rate5s += sample.rate_mbps_5s || 0
-    current.rate30s += sample.rate_mbps_30s || 0
-    buckets.set(key, current)
+    cur.rate5s  += s.rate_mbps_5s  || 0
+    cur.rate30s += s.rate_mbps_30s || 0
+    buckets.set(key, cur)
   }
   return Array.from(buckets.values()).map(item => ({
-    ...item,
-    rate5s: +item.rate5s.toFixed(2),
-    rate30s: +item.rate30s.toFixed(2),
+    ...item, rate5s: +item.rate5s.toFixed(2), rate30s: +item.rate30s.toFixed(2),
   }))
+}
+
+const tooltipStyle = {
+  contentStyle: {
+    background: '#fff', border: '1px solid var(--border)',
+    borderRadius: 10, boxShadow: 'var(--shadow-md)',
+    fontFamily: 'var(--font-ui)', fontSize: 12, padding: '10px 14px',
+  },
+  labelStyle: { color: 'var(--text-muted)', marginBottom: 4, fontWeight: 500 },
+  itemStyle:  { color: 'var(--text)' },
+}
+
+function Tile({ label, children }) {
+  return (
+    <div style={{
+      background: 'var(--elevated)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '14px 16px',
+      boxShadow: 'var(--shadow-sm)',
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 7 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{children}</div>
+    </div>
+  )
 }
 
 export default function TaskDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [task, setTask] = useState(null)
+  const [task,    setTask]    = useState(null)
   const [metrics, setMetrics] = useState([])
-  const [error, setError] = useState(null)
+  const [error,   setError]   = useState(null)
 
   const reload = async () => {
     try {
       const t = await tasksApi.get(id)
       setTask(t)
-      // Fetch last 1h of metrics
       const from = new Date(Date.now() - 3600000).toISOString()
-      const to = new Date().toISOString()
-      const m = await tasksApi.getMetrics(id, from, to)
-      setMetrics(aggregateMetrics(m))
-    } catch (e) {
-      setError(e.message)
-    }
+      setMetrics(aggregateMetrics(await tasksApi.getMetrics(id, from, new Date().toISOString())))
+    } catch (e) { setError(e.message) }
   }
 
-  useEffect(() => {
-    reload()
-    const t = setInterval(reload, 5000)
-    return () => clearInterval(t)
-  }, [id])
+  useEffect(() => { reload(); const t = setInterval(reload, 5000); return () => clearInterval(t) }, [id])
 
-  if (!task && !error) {
-    return <div className="p-6 text-gray-500 text-sm">Loading...</div>
-  }
+  if (!task && !error) return (
+    <div style={{ padding: 32, fontSize: 13, color: 'var(--text-muted)' }}>Loading...</div>
+  )
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/tasks')} className="p-2 rounded-lg bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
-          <ArrowLeft size={15} />
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => navigate('/tasks')} className="btn-secondary" style={{ padding: '8px 12px' }}>
+          <ArrowLeft size={14} />
         </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-semibold text-white">{task?.name || 'Task Detail'}</h1>
-          <p className="text-sm text-gray-500 font-mono">{id}</p>
+        <div style={{ flex: 1 }}>
+          <span className="label" style={{ display: 'block', marginBottom: 5 }}>Task Detail</span>
+          <h1 className="page-title" style={{ fontSize: 22 }}>{task?.name || 'Unnamed Task'}</h1>
+          <span className="mono" style={{ color: 'var(--text-muted)', fontSize: 11 }}>{id}</span>
         </div>
         {task && (
-          <div className="flex gap-2">
+          <div style={{ display: 'flex', gap: 8 }}>
             {task.status === 'pending' && (
-              <button onClick={async () => { await tasksApi.dispatch(id); reload() }}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 text-sm transition-colors">
+              <button onClick={async () => { await tasksApi.dispatch(id); reload() }} className="btn-primary">
                 <Play size={13} /> Dispatch
               </button>
             )}
             {(task.status === 'running' || task.status === 'dispatched') && (
-              <button onClick={async () => { await tasksApi.stop(id); reload() }}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm transition-colors">
+              <button
+                onClick={async () => { await tasksApi.stop(id); reload() }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '9px 18px', borderRadius: 8,
+                  background: 'var(--red-dim)',
+                  border: '1px solid rgba(181,60,43,0.25)',
+                  color: 'var(--red)', fontSize: 14, fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
                 <StopCircle size={13} /> Stop
               </button>
             )}
@@ -100,140 +116,163 @@ export default function TaskDetail() {
         )}
       </div>
 
-      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">{error}</div>}
+      {error && <div className="error-bar">{error}</div>}
 
-      {task && (
-        <>
-          {/* Info grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {task && (<>
+        {/* Info tiles */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <Tile label="Status"><Badge label={task.status} /></Tile>
+          <Tile label="Type"><Badge label={task.type} /></Tile>
+          <Tile label="Target Rate">
+            <span className="mono">{task.target_rate_mbps} Mbps</span>
+          </Tile>
+          <Tile label="Downloaded">
+            <span className="mono">{fmtBytes(task.total_bytes_done)}</span>
+          </Tile>
+          <Tile label="Created"><span style={{ fontSize: 13 }}>{fmtDate(task.created_at)}</span></Tile>
+          <Tile label="Started"><span style={{ fontSize: 13 }}>{fmtDate(task.started_at)}</span></Tile>
+          <Tile label="Finished"><span style={{ fontSize: 13 }}>{fmtDate(task.finished_at)}</span></Tile>
+          <Tile label="Distribution"><span className="mono">{task.distribution}</span></Tile>
+        </div>
+
+        {/* Error */}
+        {task.error_message && (
+          <div style={{
+            background: 'var(--red-dim)', border: '1px solid rgba(181,60,43,0.2)',
+            borderLeft: '3px solid var(--red)', borderRadius: 10, padding: '14px 18px',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--red)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Error
+            </div>
+            <span style={{ fontSize: 13, color: 'var(--red)' }}>{task.error_message}</span>
+          </div>
+        )}
+
+        {/* URL Pools */}
+        <div className="card" style={{ padding: '20px 22px' }}>
+          <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15, marginBottom: 14 }}>
+            URL Pools
+          </h3>
+          {(task.pools || []).length === 0 ? (
+            <div className="empty" style={{ padding: '16px 0' }}>No pools</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(task.pools || []).map(pool => (
+                <div key={pool.id} style={{
+                  border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontWeight: 500 }}>{pool.name}</span>
+                    <Badge label={pool.type} />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pool.urls?.length || 0} URLs</span>
+                  </div>
+                  <div style={{ maxHeight: 100, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {(pool.urls || []).map((url, i) => (
+                      <span key={i} className="mono" style={{ color: 'var(--accent-dark)', fontSize: 11, wordBreak: 'break-all' }}>
+                        {url}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Rate curve */}
+        <div className="card" style={{ padding: '20px 22px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+            <div>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15, marginBottom: 2 }}>Rate Curve</h3>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 1 hour</span>
+            </div>
+          </div>
+          {metrics.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={metrics} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 6" stroke="rgba(61,57,41,0.06)" />
+                <XAxis dataKey="ts"
+                  tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'DM Sans' }}
+                  tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
+                <YAxis
+                  tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'DM Sans' }}
+                  tickLine={false} axisLine={false} unit=" M" width={50} />
+                <Tooltip
+                  contentStyle={tooltipStyle.contentStyle}
+                  labelStyle={tooltipStyle.labelStyle}
+                  itemStyle={tooltipStyle.itemStyle}
+                />
+                <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, paddingTop: 14, fontFamily: 'DM Sans', color: 'var(--text-dim)' }} />
+                <Line type="monotone" dataKey="rate5s"  name="5s Avg"  stroke="#da7756" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="rate30s" name="30s Avg" stroke="#3d7a52" dot={false} strokeWidth={1.5} strokeDasharray="5 3" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty" style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              No metrics yet
+            </div>
+          )}
+        </div>
+
+        {/* Parameters */}
+        <div className="card" style={{ padding: '20px 22px' }}>
+          <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15, marginBottom: 16 }}>Parameters</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 24px' }}>
             {[
-              { label: 'Status', value: <Badge label={task.status} /> },
-              { label: 'Type', value: <Badge label={task.type} /> },
-              { label: 'Target Rate', value: task.target_rate_mbps + ' Mbps' },
-              { label: 'Downloaded', value: fmtBytes(task.total_bytes_done) },
-              { label: 'Created', value: fmtDate(task.created_at) },
-              { label: 'Started', value: fmtDate(task.started_at) },
-              { label: 'Finished', value: fmtDate(task.finished_at) },
-              { label: 'Distribution', value: task.distribution },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">{label}</p>
-                <div className="text-white text-sm font-medium">{value}</div>
+              ['Pools',             task.pools?.length || 0],
+              ['Child Tasks',       task.children?.length || 0],
+              ['Scope',             task.execution_scope || 'single_agent'],
+              ['Agent ID',          task.agent_id || '—'],
+              ['Duration',          task.duration_sec ? (task.duration_sec / 86400).toFixed(2) + 'd' : '—'],
+              ['Bytes Target',      task.total_bytes_target ? fmtBytes(task.total_bytes_target) : '—'],
+              ['Jitter %',          task.jitter_pct],
+              ['Ramp Up',           task.ramp_up_sec + 's'],
+              ['Ramp Down',         task.ramp_down_sec + 's'],
+              ['Dispatch Rate TPM', task.dispatch_rate_tpm || '—'],
+              ['Fragments',         task.concurrent_fragments],
+              ['Retries',           task.retries],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>{k}</span>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{v}</span>
               </div>
             ))}
           </div>
+        </div>
 
-          {/* URL Pool */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-3">Pools</p>
-            <div className="space-y-4">
-              {(task.pools || []).map(pool => (
-                <div key={pool.id} className="rounded-lg border border-gray-800 p-3">
-                  <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
-                    <span>{pool.name}</span>
-                    <Badge label={pool.type} />
-                    <span>{pool.urls?.length || 0} URLs</span>
-                  </div>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {(pool.urls || []).map((target, index) => (
-                      <p key={`${pool.id}-${index}`} className="text-sm text-blue-400 break-all">{target}</p>
-                    ))}
-                  </div>
-                </div>
-              ))}
+        {/* Child tasks */}
+        {task.children?.length > 0 && (
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '16px 22px 14px', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15 }}>Child Tasks</h3>
             </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead className="tbl-head">
+                <tr>
+                  <th>Name</th><th>Type</th><th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Rate</th>
+                  <th style={{ textAlign: 'right' }}>Downloaded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {task.children.map(child => (
+                  <tr key={child.id} className="tbl-row">
+                    <td><span style={{ fontWeight: 500 }}>{child.name || child.id}</span></td>
+                    <td><Badge label={child.type} /></td>
+                    <td><Badge label={child.status} /></td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className="mono" style={{ fontSize: 12 }}>{child.target_rate_mbps}</span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className="mono" style={{ fontSize: 12 }}>{fmtBytes(child.total_bytes_done)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          {/* Error */}
-          {task.error_message && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">Error</p>
-              <p className="text-sm text-red-400">{task.error_message}</p>
-            </div>
-          )}
-
-          {/* Rate curve */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-white mb-4">Rate Curve</h2>
-            {metrics.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={metrics} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="ts" tick={{ fill: '#6b7280', fontSize: 10 }} tickLine={false} />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} tickLine={false} axisLine={false} unit=" Mbps" width={60} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                    labelStyle={{ color: '#9ca3af' }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="rate5s" name="5s Avg" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                  <Line type="monotone" dataKey="rate30s" name="30s Avg" stroke="#10b981" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-32 text-gray-600 text-sm">No metrics yet</div>
-            )}
-          </div>
-
-          {/* Task parameters */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-white mb-4">Parameters</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-3 text-sm">
-              {[
-                ['Pools', task.pools?.length || 0],
-                ['Child Tasks', task.children?.length || 0],
-                ['Agent ID', task.agent_id || '—'],
-                ['Scope', task.execution_scope || 'single_agent'],
-                ['Duration', task.duration_sec ? (task.duration_sec / 86400).toFixed(2) + 'd' : '—'],
-                ['Total Bytes Target', task.total_bytes_target ? fmtBytes(task.total_bytes_target) : '—'],
-                ['Jitter %', task.jitter_pct],
-                ['Ramp Up', task.ramp_up_sec + 's'],
-                ['Ramp Down', task.ramp_down_sec + 's'],
-                ['Dispatch Rate TPM', task.dispatch_rate_tpm || '—'],
-                ['Fragments', task.concurrent_fragments],
-                ['Retries', task.retries],
-              ].map(([k, v]) => (
-                <div key={k}>
-                  <span className="text-gray-500">{k}: </span>
-                  <span className="text-white">{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium text-white mb-4">Child Tasks</h2>
-            {task.children?.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-gray-500 text-xs border-b border-gray-800">
-                      <th className="pb-2 text-left font-medium">Name</th>
-                      <th className="pb-2 text-left font-medium">Type</th>
-                      <th className="pb-2 text-left font-medium">Status</th>
-                      <th className="pb-2 text-right font-medium">Rate</th>
-                      <th className="pb-2 text-right font-medium">Downloaded</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800/50">
-                    {task.children.map(child => (
-                      <tr key={child.id}>
-                        <td className="py-2.5 text-white">{child.name || child.id}</td>
-                        <td className="py-2.5"><Badge label={child.type} /></td>
-                        <td className="py-2.5"><Badge label={child.status} /></td>
-                        <td className="py-2.5 text-right font-mono text-gray-300">{child.target_rate_mbps}</td>
-                        <td className="py-2.5 text-right text-gray-300">{fmtBytes(child.total_bytes_done)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-gray-600 text-sm">No child tasks</p>
-            )}
-          </div>
-        </>
-      )}
+        )}
+      </>)}
     </div>
   )
 }

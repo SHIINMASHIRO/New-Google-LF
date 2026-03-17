@@ -3,86 +3,77 @@ import { Plus, Trash2, Key } from 'lucide-react'
 import { credentialsApi } from '../api/index.js'
 import Badge from '../components/Badge.jsx'
 
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString()
-}
+function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleString() }
 
 export default function Credentials() {
-  const [creds, setCreds] = useState([])
+  const [creds,     setCreds]     = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [error, setError] = useState(null)
+  const [error,     setError]     = useState(null)
 
   const reload = async () => {
-    try {
-      const c = await credentialsApi.list()
-      setCreds(c || [])
-    } catch (e) {
-      setError(e.message)
-    }
+    try { setCreds((await credentialsApi.list()) || []) }
+    catch (e) { setError(e.message) }
   }
 
   useEffect(() => { reload() }, [])
 
   const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this credential?')) return
-    try {
-      await credentialsApi.delete(id)
-      await reload()
-    } catch (err) {
-      setError(err.message)
-    }
+    if (!confirm('Delete this credential?')) return
+    try { await credentialsApi.delete(id); await reload() }
+    catch (err) { setError(err.message) }
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <h1 className="text-xl font-semibold text-white">Credentials</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{creds.length} stored credentials</p>
+          <span className="label" style={{ display: 'block', marginBottom: 6 }}>Security</span>
+          <h1 className="page-title">Credentials</h1>
         </div>
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm transition-colors">
-          <Plus size={15} /> Add Credential
+        <button onClick={() => setShowModal(true)} className="btn-primary">
+          <Plus size={14} /> Add Credential
         </button>
       </div>
 
-      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">{error}<button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-300">✕</button></div>}
+      {error && (
+        <div className="error-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {error}
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }}>✕</button>
+        </div>
+      )}
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="card" style={{ overflow: 'hidden' }}>
         {creds.length === 0 ? (
-          <div className="px-4 py-12 text-center text-gray-600 text-sm">
-            No credentials yet. Add one to start provisioning agents.
-          </div>
+          <div className="empty">No credentials yet — add one to start provisioning agents</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-gray-800 bg-gray-800/50">
-              <tr className="text-gray-400 text-xs">
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-left font-medium">Type</th>
-                <th className="px-4 py-3 text-left font-medium">Created</th>
-                <th className="px-4 py-3 text-left font-medium w-16"></th>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead className="tbl-head">
+              <tr>
+                <th>Name</th><th>Type</th><th>Created</th><th style={{ width: 50 }}></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800/50">
+            <tbody>
               {creds.map(c => (
-                <tr key={c.id} className="hover:bg-gray-800/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Key size={14} className="text-gray-500" />
-                      <span className="text-white">{c.name}</span>
+                <tr key={c.id} className="tbl-row">
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Key size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                      <span style={{ fontWeight: 500 }}>{c.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <Badge label={c.type === 'key' ? 'SSH Key' : 'Password'} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(c.created_at)}</td>
-                  <td className="px-4 py-3">
+                  <td><Badge label={c.type === 'key' ? 'SSH Key' : 'Password'} /></td>
+                  <td><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(c.created_at)}</span></td>
+                  <td>
                     <button
                       onClick={() => handleDelete(c.id)}
-                      className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="Delete credential"
+                      style={{
+                        padding: '6px', borderRadius: 6, background: 'none', border: 'none',
+                        color: 'var(--text-muted)', cursor: 'pointer', transition: 'color 0.12s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} />
                     </button>
                   </td>
                 </tr>
@@ -92,73 +83,89 @@ export default function Credentials() {
         )}
       </div>
 
-      {showModal && <CredentialModal onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); reload() }} />}
+      {showModal && (
+        <CredentialModal onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); reload() }} />
+      )}
     </div>
   )
 }
 
 function CredentialModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({ name: '', type: 'key', payload: '' })
+  const [form, setForm]       = useState({ name: '', type: 'key', payload: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
 
   const submit = async e => {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      await credentialsApi.create(form)
-      onSuccess()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+    e.preventDefault(); setLoading(true)
+    try { await credentialsApi.create(form); onSuccess() }
+    catch (err) { setError(err.message) }
+    finally { setLoading(false) }
   }
 
   return (
-    <Modal title="Add Credential" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Name"><input required className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Type">
-          <select className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-            <option value="key">SSH Private Key</option>
-            <option value="password">Password</option>
-          </select>
-        </Field>
-        <Field label={form.type === 'key' ? 'Private Key (PEM)' : 'Password'}>
-          {form.type === 'key'
-            ? <textarea required className="input font-mono text-xs" rows={6} value={form.payload} onChange={e => setForm(f => ({ ...f, payload: e.target.value }))} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." />
-            : <input required type="password" className="input" value={form.payload} onChange={e => setForm(f => ({ ...f, payload: e.target.value }))} />}
-        </Field>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-        <div className="flex gap-2 justify-end pt-2">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Saving...' : 'Save'}</button>
+    <div
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(61,57,41,0.4)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 50, padding: 20,
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: 'var(--elevated)', border: '1px solid var(--border)',
+        borderRadius: 14, width: '100%', maxWidth: 440,
+        boxShadow: 'var(--shadow-lg)',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '18px 22px', borderBottom: '1px solid var(--border)',
+        }}>
+          <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, color: 'var(--text)' }}>
+            Add Credential
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 18 }}>✕</button>
         </div>
-      </form>
-    </Modal>
-  )
-}
-
-function Modal({ title, onClose, children }) {
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
-        </div>
-        <div className="p-5">{children}</div>
+        <form onSubmit={submit} style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="Name">
+            <input required className="input" value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          </Field>
+          <Field label="Type">
+            <select className="input" value={form.type}
+              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <option value="key">SSH Private Key</option>
+              <option value="password">Password</option>
+            </select>
+          </Field>
+          <Field label={form.type === 'key' ? 'Private Key (PEM)' : 'Password'}>
+            {form.type === 'key' ? (
+              <textarea
+                required rows={7} className="input"
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 12, resize: 'vertical', lineHeight: 1.6 }}
+                value={form.payload}
+                onChange={e => setForm(f => ({ ...f, payload: e.target.value }))}
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
+              />
+            ) : (
+              <input required type="password" className="input"
+                value={form.payload}
+                onChange={e => setForm(f => ({ ...f, payload: e.target.value }))} />
+            )}
+          </Field>
+          {error && <div className="error-bar">{error}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-primary">
+              {loading ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
 }
 
-function Field({ label, required, children }) {
-  return (
-    <label className="block">
-      <span className="text-xs text-gray-400 font-medium mb-1 block">{label}{required && ' *'}</span>
-      {children}
-    </label>
-  )
+function Field({ label, children }) {
+  return <div className="field"><label className="field-label">{label}</label>{children}</div>
 }
