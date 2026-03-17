@@ -68,6 +68,9 @@ func main() {
 		running: make(map[string]context.CancelFunc),
 	}
 
+	nic := newNICSampler()
+	slog.Info("nic sampler ready", "iface", nic.iface)
+
 	// ─── Main loop: heartbeat + task pull ────────────────────────────────────
 	heartbeatTicker := time.NewTicker(10 * time.Second)
 	pullTicker := time.NewTicker(5 * time.Second)
@@ -81,7 +84,7 @@ func main() {
 			return
 
 		case <-heartbeatTicker.C:
-			if err := mc.Heartbeat(ctx, runner.totalRate()); err != nil {
+			if err := mc.Heartbeat(ctx, nic.Rate()); err != nil {
 				slog.Warn("heartbeat failed", "err", err)
 			}
 
