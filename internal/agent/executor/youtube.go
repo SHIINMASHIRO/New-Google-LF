@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"strconv"
@@ -22,12 +23,14 @@ import (
 type YoutubeExecutor struct{}
 
 const (
-	youtubeWorkerTargetMbps     = 250.0
-	maxYoutubeWorkers           = 8
-	youtubeRetryDelay           = 2 * time.Second
+	youtubeWorkerTargetMbps     = 500.0
+	maxYoutubeWorkers           = 2
+	youtubeRetryDelay           = 5 * time.Second
 	youtubeNoProgressTimeout    = 2 * time.Minute
 	youtubeProgressPollInterval = 10 * time.Second
 	youtubeStderrTailLines      = 8
+	youtubeSleepMinSec          = 2 * 60  // 2 minutes
+	youtubeSleepMaxSec          = 10 * 60 // 10 minutes
 )
 
 var (
@@ -216,7 +219,15 @@ func (e *YoutubeExecutor) runWorker(
 		}
 
 		runIndex += workerCount
-		slog.Info("yt-dlp finished, restarting download", "task", task.ID, "worker", workerID, "total_bytes", cw.Total())
+		sleepSec := youtubeSleepMinSec + rand.Intn(youtubeSleepMaxSec-youtubeSleepMinSec+1)
+		slog.Info("yt-dlp finished, sleeping before next download",
+			"task", task.ID, "worker", workerID,
+			"total_bytes", cw.Total(), "sleep_sec", sleepSec)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(time.Duration(sleepSec) * time.Second):
+		}
 	}
 }
 
@@ -262,6 +273,7 @@ func buildYtdlpArgsWithJSRuntime(task *model.Task, targetURL, jsRuntime string) 
 	if cf := youtubeCookiesFile(); cf != "" {
 		args = append(args, "--cookies", cf)
 	}
+
 
 	// Rate limit
 	if task.TargetRateMbps > 0 {
