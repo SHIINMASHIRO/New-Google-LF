@@ -255,6 +255,14 @@ func buildYtdlpArgsWithJSRuntime(task *model.Task, targetURL, jsRuntime string) 
 		args = append(args, "--js-runtimes", jsRuntime)
 	}
 
+	// Use iOS player client to reduce bot detection on headless servers
+	args = append(args, "--extractor-args", "youtube:player_client=ios,web")
+
+	// Cookies file for authenticated access (required on datacenter IPs)
+	if cf := youtubeCookiesFile(); cf != "" {
+		args = append(args, "--cookies", cf)
+	}
+
 	// Rate limit
 	if task.TargetRateMbps > 0 {
 		rateBytesPerSec := int64(task.TargetRateMbps * 1e6 / 8)
@@ -281,9 +289,24 @@ func buildYtdlpArgsWithJSRuntime(task *model.Task, targetURL, jsRuntime string) 
 	return args
 }
 
+// youtubeCookiesFile returns the path to the YouTube cookies file if it exists.
+// Checks YOUTUBE_COOKIES_FILE env var first, then the default path.
+func youtubeCookiesFile() string {
+	if p := os.Getenv("YOUTUBE_COOKIES_FILE"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	const defaultPath = "/etc/ngoogle/youtube-cookies.txt"
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath
+	}
+	return ""
+}
+
 func detectYoutubeJSRuntime() string {
 	youtubeJSRuntimeOnce.Do(func() {
-		for _, candidate := range []string{"node", "deno", "bun"} {
+		for _, candidate := range []string{"node", "nodejs", "deno", "bun"} {
 			path, err := exec.LookPath(candidate)
 			if err == nil {
 				youtubeJSRuntime = candidate + ":" + path
