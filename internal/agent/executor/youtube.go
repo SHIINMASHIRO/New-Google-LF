@@ -255,8 +255,8 @@ func buildYtdlpArgsWithJSRuntime(task *model.Task, targetURL, jsRuntime string) 
 		args = append(args, "--js-runtimes", jsRuntime)
 	}
 
-	// Use iOS player client to reduce bot detection on headless servers
-	args = append(args, "--extractor-args", "youtube:player_client=ios,web")
+	// Use android player client: supports cookies and bypasses n-challenge requirement
+	args = append(args, "--extractor-args", "youtube:player_client=android,web")
 
 	// Cookies file for authenticated access (required on datacenter IPs)
 	if cf := youtubeCookiesFile(); cf != "" {
