@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, StopCircle, Play } from 'lucide-react'
 import {
@@ -62,17 +62,82 @@ export default function TaskDetail() {
   const [task,    setTask]    = useState(null)
   const [metrics, setMetrics] = useState([])
   const [error,   setError]   = useState(null)
+  const [metricsError, setMetricsError] = useState(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const mountedRef = useRef(true)
+  const taskPromiseRef = useRef(null)
+  const metricsPromiseRef = useRef(null)
 
-  const reload = async () => {
-    try {
-      const t = await tasksApi.get(id)
-      setTask(t)
-      const from = new Date(Date.now() - 3600000).toISOString()
-      setMetrics(aggregateMetrics(await tasksApi.getMetrics(id, from, new Date().toISOString())))
-    } catch (e) { setError(e.message) }
+  const reloadTask = async () => {
+    if (taskPromiseRef.current) return taskPromiseRef.current
+
+    taskPromiseRef.current = (async () => {
+      try {
+        const t = await tasksApi.get(id)
+        if (!mountedRef.current) return
+        setTask(t)
+        setError(null)
+      } catch (e) {
+        if (mountedRef.current) setError(e.message)
+      } finally {
+        taskPromiseRef.current = null
+      }
+    })()
+
+    return taskPromiseRef.current
   }
 
-  useEffect(() => { reload(); const t = setInterval(reload, 5000); return () => clearInterval(t) }, [id])
+  const reloadMetrics = async () => {
+    if (metricsPromiseRef.current) return metricsPromiseRef.current
+
+    metricsPromiseRef.current = (async () => {
+      try {
+        if (mountedRef.current) setMetricsLoading(true)
+        const from = new Date(Date.now() - 3600000).toISOString()
+        const samples = await tasksApi.getMetrics(id, from, new Date().toISOString())
+        if (!mountedRef.current) return
+        setMetrics(aggregateMetrics(samples))
+        setMetricsError(null)
+      } catch (e) {
+        if (mountedRef.current) setMetricsError(e.message)
+      } finally {
+        if (mountedRef.current) setMetricsLoading(false)
+        metricsPromiseRef.current = null
+      }
+    })()
+
+    return metricsPromiseRef.current
+  }
+
+  const reload = async () => {
+    await reloadTask()
+    reloadMetrics()
+  }
+
+  useEffect(() => {
+    mountedRef.current = true
+    taskPromiseRef.current = null
+    metricsPromiseRef.current = null
+    setTask(null)
+    setMetrics([])
+    setError(null)
+    setMetricsError(null)
+    setMetricsLoading(true)
+
+    let timeoutId
+
+    const poll = async () => {
+      await reload()
+      if (!mountedRef.current) return
+      timeoutId = window.setTimeout(poll, 15000)
+    }
+
+    poll()
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [id])
 
   if (!task && !error) return (
     <div style={{ padding: 32, fontSize: 13, color: 'var(--text-muted)' }}>Loading...</div>
@@ -187,6 +252,7 @@ export default function TaskDetail() {
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 1 hour</span>
             </div>
           </div>
+          {metricsError && <div className="error-bar" style={{ marginBottom: 12 }}>{metricsError}</div>}
           {metrics.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={metrics} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -207,6 +273,10 @@ export default function TaskDetail() {
                 <Line type="monotone" dataKey="rate30s" name="30s Avg" stroke="#3d7a52" dot={false} strokeWidth={1.5} strokeDasharray="5 3" />
               </LineChart>
             </ResponsiveContainer>
+          ) : metricsLoading ? (
+            <div className="empty" style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              Loading chart...
+            </div>
           ) : (
             <div className="empty" style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               No metrics yet

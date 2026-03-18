@@ -303,11 +303,22 @@ func (s *TaskGroupService) enrichGroup(ctx context.Context, group *model.TaskGro
 	if err != nil {
 		return nil, err
 	}
+	poolByID := make(map[string]*model.URLPool, len(pools))
+	for _, pool := range pools {
+		poolByID[pool.ID] = pool
+	}
 	for i := range children {
-		children[i], err = s.taskSvc.enrichTask(ctx, children[i])
-		if err != nil {
-			return nil, err
+		children[i] = children[i].Clone()
+		if pool, ok := poolByID[children[i].URLPoolID]; ok {
+			children[i].URLPool = pool.Clone()
+			if len(children[i].TargetURLs) == 0 {
+				children[i].SetTargetURLs(pool.URLs)
+			}
+			if children[i].Type == "" {
+				children[i].Type = pool.TaskType()
+			}
 		}
+		children[i].Normalize()
 	}
 	group.Children = children
 	group.PoolCount = len(group.Pools)
