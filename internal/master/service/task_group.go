@@ -165,13 +165,61 @@ func (s *TaskGroupService) List(ctx context.Context) ([]*model.TaskGroup, error)
 	if err != nil {
 		return nil, err
 	}
-	for i := range groups {
-		groups[i], err = s.enrichGroup(ctx, groups[i])
-		if err != nil {
-			return nil, err
-		}
+	if len(groups) == 0 {
+		return groups, nil
 	}
-	return groups, nil
+
+	pools, err := s.store.URLPools().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	poolByID := make(map[string]*model.URLPool, len(pools))
+	for _, pool := range pools {
+		poolByID[pool.ID] = pool
+	}
+
+	tasks, err := s.store.Tasks().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	childrenByGroup := make(map[string][]*model.Task, len(groups))
+	for _, task := range tasks {
+		if task.GroupID == "" {
+			continue
+		}
+		childrenByGroup[task.GroupID] = append(childrenByGroup[task.GroupID], task.Clone())
+	}
+	for _, children := range childrenByGroup {
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].CreatedAt.Before(children[j].CreatedAt)
+		})
+	}
+
+	summaries := make([]*model.TaskGroup, 0, len(groups))
+	for _, group := range groups {
+		summary := group.Clone()
+		summary.Normalize()
+
+		groupPools := make([]*model.URLPool, 0, len(summary.PoolIDs))
+		for _, id := range summary.PoolIDs {
+			if pool, ok := poolByID[id]; ok {
+				groupPools = append(groupPools, pool)
+			}
+		}
+		children := childrenByGroup[summary.ID]
+
+		summary.PoolCount = len(groupPools)
+		summary.ChildCount = len(children)
+		summary.TotalBytesDone = aggregateGroupBytes(children)
+		summary.Status = aggregateGroupStatus(children)
+		summary.Type = aggregateGroupType(groupPools, children)
+		summary.Pools = nil
+		summary.Children = nil
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
 }
 
 func (s *TaskGroupService) Get(ctx context.Context, id string) (*model.TaskGroup, error) {
@@ -262,6 +310,8 @@ func (s *TaskGroupService) enrichGroup(ctx context.Context, group *model.TaskGro
 		}
 	}
 	group.Children = children
+	group.PoolCount = len(group.Pools)
+	group.ChildCount = len(group.Children)
 	group.TotalBytesDone = aggregateGroupBytes(children)
 	group.Status = aggregateGroupStatus(children)
 	group.Type = aggregateGroupType(pools, children)

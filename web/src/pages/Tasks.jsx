@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Plus, RefreshCw, Play, StopCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { tasksApi, agentsApi, urlPoolsApi } from '../api/index.js'
@@ -16,15 +16,43 @@ export default function Tasks() {
   const [showModal, setShowModal] = useState(false)
   const [error,     setError]     = useState(null)
   const navigate = useNavigate()
+  const reloadPromiseRef = useRef(null)
+  const mountedRef = useRef(true)
 
   const reload = async () => {
-    try {
-      const [t, a, p] = await Promise.all([tasksApi.list(), agentsApi.list(), urlPoolsApi.list()])
-      setGroups(t || []); setAgents(a || []); setPools(p || [])
-    } catch (e) { setError(e.message) }
+    if (reloadPromiseRef.current) return reloadPromiseRef.current
+
+    reloadPromiseRef.current = (async () => {
+      try {
+        const [t, a, p] = await Promise.all([tasksApi.list(), agentsApi.list(), urlPoolsApi.list()])
+        if (!mountedRef.current) return
+        setGroups(t || []); setAgents(a || []); setPools(p || [])
+        setError(null)
+      } catch (e) {
+        if (mountedRef.current) setError(e.message)
+      } finally {
+        reloadPromiseRef.current = null
+      }
+    })()
+
+    return reloadPromiseRef.current
   }
 
-  useEffect(() => { reload(); const t = setInterval(reload, 5000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    let timeoutId
+
+    const poll = async () => {
+      await reload()
+      if (!mountedRef.current) return
+      timeoutId = window.setTimeout(poll, 15000)
+    }
+
+    poll()
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [])
 
   const dispatch = async (id) => { try { await tasksApi.dispatch(id); reload() } catch (e) { alert(e.message) } }
   const stop     = async (id) => { try { await tasksApi.stop(id);     reload() } catch (e) { alert(e.message) } }
@@ -72,7 +100,7 @@ export default function Tasks() {
                 <td>
                   <div style={{ fontWeight: 500 }}>{t.name || '(unnamed)'}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {(t.pools?.length || 0)} pools · {(t.children?.length || 0)} tasks · {t.execution_scope}
+                    {(t.pool_count ?? t.pools?.length ?? 0)} pools · {(t.child_count ?? t.children?.length ?? 0)} tasks · {t.execution_scope}
                   </div>
                 </td>
                 <td><Badge label={t.type} /></td>

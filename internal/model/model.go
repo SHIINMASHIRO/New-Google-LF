@@ -126,6 +126,8 @@ type TaskGroup struct {
 	Status         TaskStatus `json:"status" db:"-"`
 	Type           TaskType   `json:"type" db:"-"`
 	TotalBytesDone int64      `json:"total_bytes_done" db:"-"`
+	PoolCount      int        `json:"pool_count,omitempty" db:"-"`
+	ChildCount     int        `json:"child_count,omitempty" db:"-"`
 	Children       []*Task    `json:"children,omitempty" db:"-"`
 	Pools          []*URLPool `json:"pools,omitempty" db:"-"`
 }
