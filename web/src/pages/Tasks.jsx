@@ -15,8 +15,11 @@ export default function Tasks() {
   const [pools,     setPools]     = useState([])
   const [showModal, setShowModal] = useState(false)
   const [error,     setError]     = useState(null)
+  const [metaError, setMetaError] = useState(null)
+  const [metaLoaded, setMetaLoaded] = useState(false)
   const navigate = useNavigate()
   const reloadPromiseRef = useRef(null)
+  const metaPromiseRef = useRef(null)
   const mountedRef = useRef(true)
 
   const reload = async () => {
@@ -24,9 +27,9 @@ export default function Tasks() {
 
     reloadPromiseRef.current = (async () => {
       try {
-        const [t, a, p] = await Promise.all([tasksApi.list(), agentsApi.list(), urlPoolsApi.list()])
+        const t = await tasksApi.list()
         if (!mountedRef.current) return
-        setGroups(t || []); setAgents(a || []); setPools(p || [])
+        setGroups(t || [])
         setError(null)
       } catch (e) {
         if (mountedRef.current) setError(e.message)
@@ -36,6 +39,33 @@ export default function Tasks() {
     })()
 
     return reloadPromiseRef.current
+  }
+
+  const loadMeta = async () => {
+    if (metaPromiseRef.current) return metaPromiseRef.current
+    if (agents.length > 0 || pools.length > 0) return
+
+    metaPromiseRef.current = (async () => {
+      try {
+        const [a, p] = await Promise.all([agentsApi.list(), urlPoolsApi.list()])
+        if (!mountedRef.current) return
+        setAgents(a || [])
+        setPools(p || [])
+        setMetaError(null)
+        setMetaLoaded(true)
+      } catch (e) {
+        if (mountedRef.current) setMetaError(e.message)
+      } finally {
+        metaPromiseRef.current = null
+      }
+    })()
+
+    return metaPromiseRef.current
+  }
+
+  const openModal = () => {
+    setShowModal(true)
+    loadMeta()
   }
 
   useEffect(() => {
@@ -68,13 +98,14 @@ export default function Tasks() {
           <button onClick={reload} className="btn-secondary" style={{ padding: '9px 12px' }}>
             <RefreshCw size={14} />
           </button>
-          <button onClick={() => setShowModal(true)} className="btn-primary">
+          <button onClick={openModal} className="btn-primary">
             <Plus size={14} /> New Task Group
           </button>
         </div>
       </div>
 
       {error && <div className="error-bar">{error}</div>}
+      {metaError && <div className="error-bar">{metaError}</div>}
 
       <div className="card" style={{ overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -160,7 +191,7 @@ export default function Tasks() {
 
       {showModal && (
         <CreateTaskModal
-          agents={agents} pools={pools}
+          agents={agents} pools={pools} metaLoaded={metaLoaded}
           onClose={() => setShowModal(false)}
           onSuccess={() => { setShowModal(false); reload() }}
         />
@@ -169,7 +200,7 @@ export default function Tasks() {
   )
 }
 
-function CreateTaskModal({ agents, pools, onClose, onSuccess }) {
+function CreateTaskModal({ agents, pools, metaLoaded, onClose, onSuccess }) {
   const [form, setForm] = useState({
     name: '', pool_ids: [], agent_id: '', execution_scope: 'global',
     target_rate_mbps: 10000, duration_days: 7,
@@ -249,7 +280,11 @@ function CreateTaskModal({ agents, pools, onClose, onSuccess }) {
               maxHeight: 210, overflowY: 'auto',
               border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)',
             }}>
-              {pools.length === 0 ? (
+              {!metaLoaded ? (
+                <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-muted)' }}>
+                  Loading task form data...
+                </div>
+              ) : pools.length === 0 ? (
                 <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-muted)' }}>
                   No URL pools — create one first
                 </div>
