@@ -2,12 +2,17 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -100,6 +105,13 @@ func main() {
 					r.URL.Path = "/"
 				}
 			}
+			// Hashed assets get long cache; index.html must revalidate
+			ext := path.Ext(r.URL.Path)
+			if ext == ".js" || ext == ".css" || ext == ".woff2" || ext == ".png" || ext == ".svg" {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			fileServer.ServeHTTP(w, r)
 		})
 	}
@@ -107,7 +119,7 @@ func main() {
 	// ─── HTTP server ──────────────────────────────────────────────────────────
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      corsMiddleware(mux),
+		Handler:      gzipMiddleware(corsMiddleware(mux)),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -166,6 +178,39 @@ func itoa(n int) string {
 		s = "-" + s
 	}
 	return s
+}
+
+// ─── Gzip middleware ──────────────────────────────────────────────────────────
+
+var gzipPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
+
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := gzipPool.Get().(*gzip.Writer)
+		defer gzipPool.Put(gz)
+		gz.Reset(w)
+
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length")
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+		gz.Close()
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

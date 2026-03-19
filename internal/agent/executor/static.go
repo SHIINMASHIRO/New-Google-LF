@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aven/ngoogle/internal/master/scheduler"
@@ -30,6 +33,12 @@ func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratel
 	if len(urls) == 0 {
 		return fmt.Errorf("target_url is required for static task")
 	}
+
+	workers := task.ConcurrentFragments
+	if workers <= 1 {
+		workers = 8
+	}
+
 	tb := ratelimit.New(task.TargetRateMbps, 2.0)
 
 	startedAt := time.Now()
@@ -48,71 +57,88 @@ func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratel
 		}
 	}
 
-	var totalBytes int64
-	reqCount := int64(0)
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-reqCtx.Done():
-			return nil
-		default:
-		}
-
-		// Check volume target
-		if task.TotalBytesTarget > 0 && totalBytes >= task.TotalBytesTarget {
-			return nil
-		}
-		if task.TotalRequestsTarget > 0 && reqCount >= task.TotalRequestsTarget {
-			return nil
-		}
-
-		// Compute current rate multiplier
-		var elapsed time.Duration
-		if task.StartedAt != nil {
-			elapsed = time.Since(*task.StartedAt)
-		} else {
-			elapsed = time.Since(startedAt)
-		}
-		mult := scheduler.RateForTask(task, elapsed, nil)
-		effectiveRate := task.TargetRateMbps * mult
-		tb.SetRate(effectiveRate)
-
-		// Download
-		targetURL := urls[int(reqCount)%len(urls)]
-		n, err := downloadOnce(reqCtx, targetURL, tb)
-		if err != nil {
-			if reqCtx.Err() != nil {
-				return nil // context cancelled — normal stop
-			}
-			fmt.Printf("static download err: %v, retrying...\n", err)
+	// Rate adjustment goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
 			select {
 			case <-reqCtx.Done():
-				return nil
-			case <-time.After(2 * time.Second):
-			}
-			continue
-		}
-
-		totalBytes += n
-		reqCount++
-		meter.Record(n)
-		if progress != nil {
-			progress(totalBytes)
-		}
-
-		// Apply inter-request jitter
-		if task.DispatchRateTpm > 0 {
-			interval := scheduler.DispatchInterval(task.DispatchRateTpm, task.DispatchBatchSize)
-			interval = scheduler.ApplyJitter(interval, task.JitterPct)
-			select {
-			case <-reqCtx.Done():
-				return nil
-			case <-time.After(interval):
+				return
+			case <-ticker.C:
+				var elapsed time.Duration
+				if task.StartedAt != nil {
+					elapsed = time.Since(*task.StartedAt)
+				} else {
+					elapsed = time.Since(startedAt)
+				}
+				mult := scheduler.RateForTask(task, elapsed, nil)
+				tb.SetRate(task.TargetRateMbps * mult)
 			}
 		}
+	}()
+
+	var totalBytes atomic.Int64
+	var reqCount atomic.Int64
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-reqCtx.Done():
+					return
+				default:
+				}
+
+				// Check volume targets
+				if task.TotalBytesTarget > 0 && totalBytes.Load() >= task.TotalBytesTarget {
+					return
+				}
+				if task.TotalRequestsTarget > 0 && reqCount.Load() >= task.TotalRequestsTarget {
+					return
+				}
+
+				idx := reqCount.Add(1) - 1
+				targetURL := urls[int(idx)%len(urls)]
+				n, err := downloadOnce(reqCtx, targetURL, tb)
+				if err != nil {
+					if reqCtx.Err() != nil {
+						return
+					}
+					slog.Warn("static download err, retrying", "worker", workerID, "err", err)
+					select {
+					case <-reqCtx.Done():
+						return
+					case <-time.After(2 * time.Second):
+					}
+					continue
+				}
+
+				newTotal := totalBytes.Add(n)
+				meter.Record(n)
+				if progress != nil {
+					progress(newTotal)
+				}
+
+				// Apply inter-request jitter
+				if task.DispatchRateTpm > 0 {
+					interval := scheduler.DispatchInterval(task.DispatchRateTpm, task.DispatchBatchSize)
+					interval = scheduler.ApplyJitter(interval, task.JitterPct)
+					select {
+					case <-reqCtx.Done():
+						return
+					case <-time.After(interval):
+					}
+				}
+			}
+		}(w)
 	}
+
+	wg.Wait()
+	return nil
 }
 
 func downloadOnce(ctx context.Context, url string, tb *ratelimit.TokenBucket) (int64, error) {
@@ -133,7 +159,7 @@ func downloadOnce(ctx context.Context, url string, tb *ratelimit.TokenBucket) (i
 	}
 
 	// Read with rate limiting
-	buf := make([]byte, 32*1024) // 32 KB chunks
+	buf := make([]byte, 64*1024) // 64 KB chunks
 	var total int64
 	for {
 		n, err := resp.Body.Read(buf)
