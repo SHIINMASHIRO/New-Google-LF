@@ -11,20 +11,22 @@ import (
 	"github.com/aven/ngoogle/internal/model"
 )
 
-func TestYoutubeWorkerCountUsesTargetRateAndCapsByURLs(t *testing.T) {
+func TestYoutubeWorkerCountUsesTargetRateAndCapsByMax(t *testing.T) {
 	task := &model.Task{TargetRateMbps: 1000}
-	if got := youtubeWorkerCount(task, 20); got != 4 {
-		t.Fatalf("expected 4 workers for 1000 Mbps, got %d", got)
+	// maxYoutubeWorkers is 2, so high rate still caps at 2
+	if got := youtubeWorkerCount(task, 20); got != 2 {
+		t.Fatalf("expected 2 workers (capped by maxYoutubeWorkers), got %d", got)
 	}
-	if got := youtubeWorkerCount(task, 3); got != 3 {
+	if got := youtubeWorkerCount(task, 1); got != 1 {
 		t.Fatalf("expected worker count capped by url count, got %d", got)
 	}
 }
 
-func TestYoutubeWorkerCountUsesConcurrentFragmentsAsHint(t *testing.T) {
+func TestYoutubeWorkerCountCappedByMax(t *testing.T) {
 	task := &model.Task{TargetRateMbps: 50, ConcurrentFragments: 6}
-	if got := youtubeWorkerCount(task, 10); got != 6 {
-		t.Fatalf("expected 6 workers from concurrency hint, got %d", got)
+	// Even with high hint, capped at maxYoutubeWorkers (2)
+	if got := youtubeWorkerCount(task, 10); got != 2 {
+		t.Fatalf("expected 2 workers (capped by maxYoutubeWorkers), got %d", got)
 	}
 }
 
