@@ -191,6 +191,7 @@ func migrate(db *sql.DB) error {
 			recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_bandwidth_agent_time ON bandwidth_samples(agent_id, recorded_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_bandwidth_recorded_at ON bandwidth_samples(recorded_at);`,
 		`CREATE TABLE IF NOT EXISTS credentials (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL DEFAULT '',

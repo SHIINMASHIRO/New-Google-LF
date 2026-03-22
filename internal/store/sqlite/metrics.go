@@ -100,7 +100,7 @@ func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) 
 func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to time.Time) ([]*model.BandwidthSample, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,agent_id,rate_mbps,recorded_at FROM bandwidth_samples
-		WHERE agent_id=? AND substr(recorded_at,1,19) BETWEEN ? AND ? ORDER BY recorded_at ASC`,
+		WHERE agent_id=? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at ASC`,
 		agentID, from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
@@ -122,11 +122,11 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 	// Use substr to normalize recorded_at to 'YYYY-MM-DD HH:MM:SS' for strftime compatibility
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
-			datetime((strftime('%%s', substr(recorded_at,1,19)) / %d) * %d, 'unixepoch') as bucket,
+			datetime((strftime('%%s', recorded_at) / %d) * %d, 'unixepoch') as bucket,
 			SUM(rate_mbps),
 			MAX(rate_mbps)
 		FROM bandwidth_samples
-		WHERE substr(recorded_at,1,19) BETWEEN ? AND ?
+		WHERE recorded_at BETWEEN ? AND ?
 		GROUP BY bucket ORDER BY bucket ASC`, stepSec, stepSec),
 		from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 }
 
 func (s *bandwidthStore) PurgeOlderThan(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE substr(recorded_at,1,19) < ?`, before.UTC().Format("2006-01-02 15:04:05"))
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE recorded_at < ?`, before.UTC().Format("2006-01-02 15:04:05"))
 	return err
 }
 
@@ -156,7 +156,7 @@ func (s *bandwidthStore) TotalCurrent(ctx context.Context, since time.Time) (flo
 	row := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(rate_mbps),0) FROM (
 			SELECT agent_id, rate_mbps FROM bandwidth_samples
-			WHERE substr(recorded_at,1,19) >= ?
+			WHERE recorded_at >= ?
 			GROUP BY agent_id
 			HAVING recorded_at=MAX(recorded_at)
 		)`, since.UTC().Format("2006-01-02 15:04:05"))

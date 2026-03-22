@@ -51,9 +51,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    loadOverview(); loadHistory()
-    const t1 = setInterval(loadOverview, 1000)
-    const t2 = setInterval(loadHistory, 10000)
+    loadOverview()
+    loadHistory()
+    const t1 = setInterval(loadOverview, 3000)
+    const t2 = setInterval(loadHistory, 60000)
     return () => { clearInterval(t1); clearInterval(t2) }
   }, [])
 
