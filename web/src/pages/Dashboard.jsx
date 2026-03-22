@@ -7,17 +7,22 @@ import { dashboardApi } from '../api/index.js'
 import StatCard from '../components/StatCard.jsx'
 import Badge from '../components/Badge.jsx'
 
+const LIVE_MAX_POINTS = 60 // ~3 minutes at 3s interval
+
 const RANGES = [
-  { key: 'live', label: 'Live',   ms: 60 * 60 * 1000,       step: '1m',  refresh: 5000  },
-  { key: '3d',   label: '3 Days', ms: 3 * 24 * 3600 * 1000,  step: '15m', refresh: 60000 },
-  { key: '7d',   label: '7 Days', ms: 7 * 24 * 3600 * 1000,  step: '30m', refresh: 60000 },
+  { key: 'live', label: 'Live' },
+  { key: '3d',   label: '3 Days', ms: 3 * 24 * 3600 * 1000, step: '15m', refresh: 60000 },
+  { key: '7d',   label: '7 Days', ms: 7 * 24 * 3600 * 1000, step: '30m', refresh: 60000 },
 ]
 
-function fmtTime(iso, range) {
+function fmtTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
-  if (range === 'live') return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtLiveTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 const tooltipStyle = {
@@ -48,20 +53,54 @@ const btnBase = {
 export default function Dashboard() {
   const [overview, setOverview] = useState(null)
   const [history,  setHistory]  = useState([])
+  const [liveData, setLiveData] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [error,    setError]    = useState(null)
   const [range,    setRange]    = useState('live')
-  const [lastUpdate, setLastUpdate] = useState(null)
   const abortRef = useRef(null)
-  const historyTimerRef = useRef(null)
+  const liveRef = useRef([])
 
+  // ── Overview polling (always runs) ──
   const loadOverview = async () => {
-    try { const ov = await dashboardApi.overview(); setOverview(ov); setError(null) }
-    catch (e) { if (e.name !== 'AbortError') setError(e.message) }
+    try {
+      const ov = await dashboardApi.overview()
+      setOverview(ov)
+      setError(null)
+      return ov
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(e.message)
+      return null
+    }
   }
 
+  useEffect(() => {
+    loadOverview()
+    const t = setInterval(loadOverview, 3000)
+    return () => clearInterval(t)
+  }, [])
+
+  // ── Live mode: push overview.total_rate_mbps into a rolling buffer ──
+  useEffect(() => {
+    if (range !== 'live' || !overview) return
+    const now = new Date()
+    const point = { ts: fmtLiveTime(now), avg: +overview.total_rate_mbps.toFixed(1) }
+    liveRef.current = [...liveRef.current.slice(-(LIVE_MAX_POINTS - 1)), point]
+    setLiveData([...liveRef.current])
+  }, [overview, range])
+
+  // Clear live buffer when switching away from live
+  useEffect(() => {
+    if (range === 'live') {
+      liveRef.current = []
+      setLiveData([])
+      setHistoryLoading(false)
+    }
+  }, [range])
+
+  // ── History mode (3d / 7d) ──
   const loadHistory = useCallback(async (rangeKey, signal) => {
-    const cfg = RANGES.find(r => r.key === rangeKey) || RANGES[0]
+    const cfg = RANGES.find(r => r.key === rangeKey)
+    if (!cfg || !cfg.ms) return
     try {
       setHistoryLoading(true)
       const hist = await dashboardApi.bandwidthHistory(
@@ -71,11 +110,10 @@ export default function Dashboard() {
       )
       if (signal?.aborted) return
       setHistory((hist || []).map(p => ({
-        ts:  fmtTime(p.ts, rangeKey),
+        ts:  fmtTime(p.ts),
         avg: +p.avg_mbps.toFixed(2),
         max: +p.max_mbps.toFixed(2),
       })))
-      setLastUpdate(new Date())
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message)
     } finally {
@@ -83,30 +121,20 @@ export default function Dashboard() {
     }
   }, [])
 
-  // Overview polling
   useEffect(() => {
-    loadOverview()
-    const t = setInterval(loadOverview, 3000)
-    return () => clearInterval(t)
-  }, [])
-
-  // History polling — restarts when range changes
-  useEffect(() => {
+    if (range === 'live') return
     const ac = new AbortController()
     abortRef.current = ac
-
     loadHistory(range, ac.signal)
-
-    const cfg = RANGES.find(r => r.key === range) || RANGES[0]
-    historyTimerRef.current = setInterval(() => loadHistory(range, ac.signal), cfg.refresh)
-
-    return () => {
-      ac.abort()
-      clearInterval(historyTimerRef.current)
-    }
+    const cfg = RANGES.find(r => r.key === range)
+    const t = setInterval(() => loadHistory(range, ac.signal), cfg?.refresh || 60000)
+    return () => { ac.abort(); clearInterval(t) }
   }, [range, loadHistory])
 
-  const rangeLabel = (RANGES.find(r => r.key === range) || RANGES[0]).label
+  // ── Determine chart data ──
+  const isLive = range === 'live'
+  const chartData = isLive ? liveData : history
+  const chartLoading = isLive ? false : (historyLoading && history.length === 0)
 
   const sortedAgents = overview?.agents
     ? [...overview.agents].sort((a, b) => b.rate_mbps - a.rate_mbps)
@@ -150,21 +178,15 @@ export default function Dashboard() {
           icon={ListTodo} color="purple" />
       </div>
 
-      {/* Bandwidth history */}
+      {/* Bandwidth chart */}
       <div className="card" style={{ padding: '22px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, color: 'var(--text)', marginBottom: 2 }}>
-              Bandwidth History
+              Bandwidth {isLive ? 'Monitor' : 'History'}
             </h2>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {rangeLabel}
-              {range === 'live' && ' · 1 min · auto-refresh 5s'}
-              {range === '3d'   && ' · 15 min resolution'}
-              {range === '7d'   && ' · 30 min resolution'}
-              {lastUpdate && <span style={{ marginLeft: 8, opacity: 0.6 }}>
-                Updated {lastUpdate.toLocaleTimeString()}
-              </span>}
+              {isLive ? 'Real-time · 3s interval' : range === '3d' ? '3 Days · 15 min resolution' : '7 Days · 30 min resolution'}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -182,16 +204,16 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {historyLoading && history.length === 0 ? (
+        {chartLoading ? (
           <div style={SKELETON_STYLE}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <div className="dot-live" />
-              <span>Loading bandwidth history…</span>
+              <span>Loading…</span>
             </div>
           </div>
-        ) : history.length > 0 ? (
+        ) : chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={history} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="gAvg" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="#da7756" stopOpacity={0.18} />
@@ -206,7 +228,8 @@ export default function Dashboard() {
               <XAxis dataKey="ts"
                 tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'DM Sans' }}
                 tickLine={false}
-                axisLine={{ stroke: 'var(--border)' }} />
+                axisLine={{ stroke: 'var(--border)' }}
+                interval={isLive ? Math.max(0, Math.floor(chartData.length / 6) - 1) : undefined} />
               <YAxis
                 tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'DM Sans' }}
                 tickLine={false} axisLine={false}
@@ -216,19 +239,19 @@ export default function Dashboard() {
                 labelStyle={tooltipStyle.labelStyle}
                 itemStyle={tooltipStyle.itemStyle}
               />
-              <Legend
+              {!isLive && <Legend
                 iconType="plainline"
                 wrapperStyle={{ fontSize: 12, paddingTop: 16, fontFamily: 'DM Sans', color: 'var(--text-dim)' }}
-              />
-              <Area type="monotone" dataKey="avg" name="Avg Mbps"
+              />}
+              <Area type="monotone" dataKey="avg" name={isLive ? 'Total Mbps' : 'Avg Mbps'}
                 stroke="#da7756" fill="url(#gAvg)" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Area type="monotone" dataKey="max" name="Max Mbps"
-                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />
+              {!isLive && <Area type="monotone" dataKey="max" name="Max Mbps"
+                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />}
             </AreaChart>
           </ResponsiveContainer>
         ) : (
           <div className="empty" style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            No data yet — start some tasks to see bandwidth history
+            {isLive ? 'Waiting for data…' : 'No data yet — start some tasks to see bandwidth history'}
           </div>
         )}
       </div>
