@@ -1,6 +1,26 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ngoogle-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ngoogle
+      POSTGRES_PASSWORD: ngoogle
+      POSTGRES_DB: ngoogle
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngoogle"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ngoogle
+
   master:
     build:
       context: ..
@@ -12,10 +32,12 @@ services:
     environment:
       MASTER_ADDR: ":8080"
       MASTER_URL: "http://master:8080"
-      SQLITE_DSN: "file:/data/master.db?cache=shared&_fk=on"
+      DB_DRIVER: "postgres"
+      PG_DSN: "postgres://ngoogle:ngoogle@postgres:5432/ngoogle?sslmode=disable"
       AGENT_BIN_PATH: ""
-    volumes:
-      - master-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 10s
@@ -45,7 +67,7 @@ services:
           memory: 512M
 
 volumes:
-  master-data:
+  pg-data:
     driver: local
 
 networks:

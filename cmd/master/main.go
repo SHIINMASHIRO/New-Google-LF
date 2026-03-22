@@ -20,6 +20,8 @@ import (
 	"github.com/aven/ngoogle/internal/master/provision"
 	"github.com/aven/ngoogle/internal/master/scheduler"
 	"github.com/aven/ngoogle/internal/master/service"
+	"github.com/aven/ngoogle/internal/store"
+	"github.com/aven/ngoogle/internal/store/postgres"
 	"github.com/aven/ngoogle/internal/store/sqlite"
 	ngweb "github.com/aven/ngoogle/web"
 )
@@ -29,12 +31,23 @@ func main() {
 
 	// ─── Config from env ──────────────────────────────────────────────────────
 	addr := envOr("MASTER_ADDR", ":8080")
-	dsn := envOr("SQLITE_DSN", "file:master.db?cache=shared&_fk=on")
+	dbDriver := envOr("DB_DRIVER", "sqlite")
 	masterURL := envOr("MASTER_URL", "http://localhost:8080")
 	agentDownloadURL := envOr("AGENT_DOWNLOAD_URL", "")
 
 	// ─── Store ────────────────────────────────────────────────────────────────
-	st, err := sqlite.New(dsn)
+	var st store.Store
+	var err error
+	switch dbDriver {
+	case "postgres":
+		pgDSN := envOr("PG_DSN", "postgres://ngoogle:ngoogle@localhost:5432/ngoogle?sslmode=disable")
+		st, err = postgres.New(pgDSN)
+		slog.Info("using PostgreSQL store", "dsn_host", pgDSN[:min(len(pgDSN), 40)])
+	default:
+		sqliteDSN := envOr("SQLITE_DSN", "file:master.db?cache=shared&_fk=on")
+		st, err = sqlite.New(sqliteDSN)
+		slog.Info("using SQLite store")
+	}
 	if err != nil {
 		slog.Error("open store", "err", err)
 		os.Exit(1)
