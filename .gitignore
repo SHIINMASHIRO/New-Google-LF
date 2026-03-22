@@ -31,3 +31,9 @@ Thumbs.db
 # Secrets
 *.pem
 *.key
+
+# Internal docs / credentials
+cmi.txt
+测试环境.md
+.dist/
+.gocache/
