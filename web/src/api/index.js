@@ -1,11 +1,12 @@
 const BASE = '/api/v1'
 
-async function req(method, path, body) {
+async function req(method, path, body, signal) {
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' },
   }
   if (body) opts.body = JSON.stringify(body)
+  if (signal) opts.signal = signal
   const res = await fetch(BASE + path, opts)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -53,8 +54,8 @@ export const urlPoolsApi = {
 // ── Dashboard ────────────────────────────────────────────────────────────────
 export const dashboardApi = {
   overview: () => req('GET', '/dashboard/overview'),
-  bandwidthHistory: (from, to, step = '5m') =>
-    req('GET', `/dashboard/bandwidth/history?from=${from}&to=${to}&step=${step}`),
+  bandwidthHistory: (from, to, step = '30m', signal) =>
+    req('GET', `/dashboard/bandwidth/history?from=${from}&to=${to}&step=${step}`, null, signal),
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────

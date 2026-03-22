@@ -41,13 +41,22 @@ func (h *DashboardHandler) BandwidthHistory(w http.ResponseWriter, r *http.Reque
 	to := parseTime(q.Get("to"), time.Now())
 	stepSec := 60
 	if s := q.Get("step"); s != "" {
-		// parse "1m", "5m", or plain seconds
-		if s == "5m" {
+		// parse "1m", "5m", "30m", or plain seconds
+		switch s {
+		case "5m":
 			stepSec = 300
-		} else if s == "1m" {
+		case "15m":
+			stepSec = 900
+		case "30m":
+			stepSec = 1800
+		case "1h":
+			stepSec = 3600
+		case "1m":
 			stepSec = 60
-		} else if n, err := strconv.Atoi(s); err == nil {
-			stepSec = n
+		default:
+			if n, err := strconv.Atoi(s); err == nil {
+				stepSec = n
+			}
 		}
 	}
 	points, err := h.svc.BandwidthHistory(r.Context(), from, to, stepSec)

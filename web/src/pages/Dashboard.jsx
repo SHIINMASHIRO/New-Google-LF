@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Activity, Server, ListTodo, Zap } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -26,36 +26,60 @@ const tooltipStyle = {
   itemStyle:  { color: 'var(--text)' },
 }
 
+const SKELETON_STYLE = {
+  height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  color: 'var(--text-muted)', fontSize: 13,
+}
+
 export default function Dashboard() {
   const [overview, setOverview] = useState(null)
   const [history,  setHistory]  = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
   const [error,    setError]    = useState(null)
+  const abortRef = useRef(null)
 
   const loadOverview = async () => {
     try { const ov = await dashboardApi.overview(); setOverview(ov); setError(null) }
-    catch (e) { setError(e.message) }
+    catch (e) { if (e.name !== 'AbortError') setError(e.message) }
   }
 
-  const loadHistory = async () => {
+  const loadHistory = async (signal) => {
     try {
+      setHistoryLoading(true)
       const hist = await dashboardApi.bandwidthHistory(
         new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
-        new Date().toISOString(), '5m'
+        new Date().toISOString(), '30m',
+        signal
       )
+      if (signal?.aborted) return
       setHistory((hist || []).map(p => ({
         ts:  fmtTime(p.ts),
         avg: +p.avg_mbps.toFixed(2),
         max: +p.max_mbps.toFixed(2),
       })))
-    } catch (e) { setError(e.message) }
+    } catch (e) {
+      if (e.name !== 'AbortError') setError(e.message)
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   useEffect(() => {
+    const ac = new AbortController()
+    abortRef.current = ac
+
+    // Load overview immediately (fast, <100ms)
     loadOverview()
-    loadHistory()
+    // Load history in background — does not block stat cards or agent ranking
+    loadHistory(ac.signal)
+
     const t1 = setInterval(loadOverview, 3000)
-    const t2 = setInterval(loadHistory, 60000)
-    return () => { clearInterval(t1); clearInterval(t2) }
+    const t2 = setInterval(() => loadHistory(ac.signal), 60000)
+    return () => {
+      ac.abort()
+      clearInterval(t1)
+      clearInterval(t2)
+    }
   }, [])
 
   const sortedAgents = overview?.agents
@@ -107,11 +131,18 @@ export default function Dashboard() {
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, color: 'var(--text)', marginBottom: 2 }}>
               Bandwidth History
             </h2>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 7 days · 5 min resolution</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 7 days · 30 min resolution</span>
           </div>
         </div>
 
-        {history.length > 0 ? (
+        {historyLoading && history.length === 0 ? (
+          <div style={SKELETON_STYLE}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <div className="dot-live" />
+              <span>Loading bandwidth history…</span>
+            </div>
+          </div>
+        ) : history.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={history} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
