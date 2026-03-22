@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/aven/ngoogle/internal/store"
@@ -10,6 +11,17 @@ import (
 // DashboardService aggregates metrics for the dashboard.
 type DashboardService struct {
 	store store.Store
+
+	// In-memory cache to avoid hitting SQLite on every request.
+	// Overview is refreshed by a background goroutine every second.
+	overviewMu    sync.RWMutex
+	overviewCache *OverviewResponse
+	overviewAt    time.Time
+
+	historyMu    sync.RWMutex
+	historyCache []store.BandwidthPoint
+	historyKey   string
+	historyAt    time.Time
 }
 
 // NewDashboardService creates a new DashboardService.
@@ -17,15 +29,32 @@ func NewDashboardService(st store.Store) *DashboardService {
 	return &DashboardService{store: st}
 }
 
-// Overview returns current totals and per-agent stats.
-func (s *DashboardService) Overview(ctx context.Context) (*OverviewResponse, error) {
+// RunOverviewRefresh periodically refreshes the overview cache in background.
+// This decouples dashboard reads from the database entirely.
+func (s *DashboardService) RunOverviewRefresh(ctx context.Context) {
+	// Initial load
+	s.refreshOverview(ctx)
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.refreshOverview(ctx)
+		}
+	}
+}
+
+func (s *DashboardService) refreshOverview(ctx context.Context) {
 	agents, err := s.store.Agents().List(ctx)
 	if err != nil {
-		return nil, err
+		return
 	}
 	tasks, err := s.store.Tasks().List(ctx)
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	var totalMbps float64
@@ -59,14 +88,31 @@ func (s *DashboardService) Overview(ctx context.Context) (*OverviewResponse, err
 		}
 	}
 
-	return &OverviewResponse{
+	resp := &OverviewResponse{
 		TotalAgents:   len(agents),
 		OnlineAgents:  onlineCount,
 		TotalTasks:    len(tasks),
 		RunningTasks:  runningTasks,
 		TotalRateMbps: totalMbps,
 		Agents:        agentStats,
-	}, nil
+	}
+
+	s.overviewMu.Lock()
+	s.overviewCache = resp
+	s.overviewAt = time.Now()
+	s.overviewMu.Unlock()
+}
+
+// Overview returns the cached overview (never blocks on DB).
+func (s *DashboardService) Overview(_ context.Context) (*OverviewResponse, error) {
+	s.overviewMu.RLock()
+	resp := s.overviewCache
+	s.overviewMu.RUnlock()
+	if resp != nil {
+		return resp, nil
+	}
+	// Fallback: cache not yet populated (first few ms after startup)
+	return &OverviewResponse{}, nil
 }
 
 // OverviewResponse is the dashboard overview payload.
@@ -79,12 +125,34 @@ type OverviewResponse struct {
 	Agents        interface{} `json:"agents"`
 }
 
-// BandwidthHistory returns aggregated bandwidth samples.
+// BandwidthHistory returns aggregated bandwidth samples (cached for 30s).
 func (s *DashboardService) BandwidthHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
 	if stepSec <= 0 {
 		stepSec = 60
 	}
-	return s.store.Bandwidth().AggregateHistory(ctx, from, to, stepSec)
+
+	key := from.Truncate(time.Minute).Format(time.RFC3339) + "|" + to.Truncate(time.Minute).Format(time.RFC3339)
+
+	s.historyMu.RLock()
+	if s.historyKey == key && time.Since(s.historyAt) < 30*time.Second {
+		cached := s.historyCache
+		s.historyMu.RUnlock()
+		return cached, nil
+	}
+	s.historyMu.RUnlock()
+
+	points, err := s.store.Bandwidth().AggregateHistory(ctx, from, to, stepSec)
+	if err != nil {
+		return nil, err
+	}
+
+	s.historyMu.Lock()
+	s.historyCache = points
+	s.historyKey = key
+	s.historyAt = time.Now()
+	s.historyMu.Unlock()
+
+	return points, nil
 }
 
 // RunPurge runs a daily purge of bandwidth samples older than 7 days.

@@ -132,6 +132,7 @@ func main() {
 	go sched.Run(ctx)
 	go agentSvc.RunOfflineDetection(ctx)
 	go dashSvc.RunPurge(ctx)
+	go dashSvc.RunOverviewRefresh(ctx)
 
 	// ─── Graceful shutdown ────────────────────────────────────────────────────
 	go func() {
