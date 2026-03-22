@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -43,7 +44,12 @@ func New(dsn string) (store.Store, error) {
 	// cannot access the same in-memory database.
 	roDB := db
 	if dsn != ":memory:" {
-		roDB, err = sql.Open("sqlite", dsn+"?mode=ro")
+		// Append mode=ro using correct separator (& if DSN already has query params, ? otherwise)
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		roDB, err = sql.Open("sqlite", dsn+sep+"mode=ro")
 		if err != nil {
 			return nil, fmt.Errorf("sqlite open read-only: %w", err)
 		}
