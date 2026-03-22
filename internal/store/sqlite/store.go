@@ -37,23 +37,30 @@ func New(dsn string) (store.Store, error) {
 	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("sqlite migrate: %w", err)
 	}
-	// Open a separate read-only connection pool for queries.
-	// WAL mode allows concurrent reads even while the writer is active.
-	// This prevents dashboard queries from being blocked behind heartbeat writes.
+	// Open a separate connection pool for read queries.
+	// WAL mode allows concurrent reads alongside the single writer.
+	// This prevents dashboard reads from queuing behind heartbeat writes.
 	// For :memory: databases (tests), reuse the same connection since separate connections
 	// cannot access the same in-memory database.
 	roDB := db
 	if dsn != ":memory:" {
-		// Append mode=ro using correct separator (& if DSN already has query params, ? otherwise)
 		sep := "?"
 		if strings.Contains(dsn, "?") {
 			sep = "&"
 		}
-		roDB, err = sql.Open("sqlite", dsn+sep+"mode=ro")
+		roDB, err = sql.Open("sqlite", dsn+sep+"_pragma=busy_timeout(5000)")
 		if err != nil {
-			return nil, fmt.Errorf("sqlite open read-only: %w", err)
+			return nil, fmt.Errorf("sqlite open read pool: %w", err)
 		}
 		roDB.SetMaxOpenConns(4)
+		roDB.SetMaxIdleConns(4)
+		// Ensure WAL mode and read-only transactions on the read pool
+		if _, err := roDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
+			return nil, fmt.Errorf("ro pragma wal: %w", err)
+		}
+		if _, err := roDB.Exec("PRAGMA query_only=ON"); err != nil {
+			return nil, fmt.Errorf("ro pragma query_only: %w", err)
+		}
 	}
 	s := &sqliteStore{
 		db:       db,
