@@ -92,8 +92,8 @@ func (s *taskMetricsStore) LatestByTaskAgents(ctx context.Context, taskID string
 type bandwidthStore struct{ db *sql.DB }
 
 func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO bandwidth_samples(agent_id,rate_mbps,recorded_at) VALUES(?,?,?)`,
-		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC().Format("2006-01-02 15:04:05"))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO bandwidth_samples(agent_id,rate_mbps,recorded_at,ts) VALUES(?,?,?,?)`,
+		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC().Format("2006-01-02 15:04:05"), bs.RecordedAt.Unix())
 	return err
 }
 
@@ -118,17 +118,16 @@ func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to t
 }
 
 func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
-	// SQLite: bucket by stepSec using integer division of unix timestamp
-	// Use substr to normalize recorded_at to 'YYYY-MM-DD HH:MM:SS' for strftime compatibility
+	// Use integer ts column for fast aggregation — no strftime overhead per row
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
-			datetime((strftime('%%s', recorded_at) / %d) * %d, 'unixepoch') as bucket,
+			(ts / %d) * %d as bucket,
 			SUM(rate_mbps),
 			MAX(rate_mbps)
 		FROM bandwidth_samples
-		WHERE recorded_at BETWEEN ? AND ?
+		WHERE ts BETWEEN ? AND ?
 		GROUP BY bucket ORDER BY bucket ASC`, stepSec, stepSec),
-		from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
+		from.Unix(), to.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -136,18 +135,18 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 	var result []store.BandwidthPoint
 	for rows.Next() {
 		var p store.BandwidthPoint
-		var ts string
-		if err := rows.Scan(&ts, &p.AvgMbps, &p.MaxMbps); err != nil {
+		var bucketUnix int64
+		if err := rows.Scan(&bucketUnix, &p.AvgMbps, &p.MaxMbps); err != nil {
 			return nil, err
 		}
-		p.Ts, _ = time.Parse("2006-01-02 15:04:05", ts)
+		p.Ts = time.Unix(bucketUnix, 0).UTC()
 		result = append(result, p)
 	}
 	return result, rows.Err()
 }
 
 func (s *bandwidthStore) PurgeOlderThan(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE recorded_at < ?`, before.UTC().Format("2006-01-02 15:04:05"))
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE ts < ?`, before.Unix())
 	return err
 }
 
@@ -156,10 +155,10 @@ func (s *bandwidthStore) TotalCurrent(ctx context.Context, since time.Time) (flo
 	row := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(rate_mbps),0) FROM (
 			SELECT agent_id, rate_mbps FROM bandwidth_samples
-			WHERE recorded_at >= ?
+			WHERE ts >= ?
 			GROUP BY agent_id
-			HAVING recorded_at=MAX(recorded_at)
-		)`, since.UTC().Format("2006-01-02 15:04:05"))
+			HAVING ts=MAX(ts)
+		)`, since.Unix())
 	var total float64
 	return total, row.Scan(&total)
 }

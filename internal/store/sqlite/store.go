@@ -217,6 +217,18 @@ func migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "tasks", "execution_scope", "TEXT NOT NULL DEFAULT 'single_agent'"); err != nil {
 		return err
 	}
+	// Add unix timestamp column for fast aggregation (avoids strftime on every row)
+	if err := ensureColumn(db, "bandwidth_samples", "ts", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// Backfill ts from recorded_at for existing rows
+	if _, err := db.Exec(`UPDATE bandwidth_samples SET ts = CAST(strftime('%s', recorded_at) AS INTEGER) WHERE ts = 0`); err != nil {
+		return fmt.Errorf("backfill bandwidth ts: %w", err)
+	}
+	// Index on ts for fast range + grouping queries
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_bandwidth_ts ON bandwidth_samples(ts)`); err != nil {
+		return fmt.Errorf("create idx_bandwidth_ts: %w", err)
+	}
 	return nil
 }
 
