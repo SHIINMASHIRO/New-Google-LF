@@ -122,9 +122,36 @@ func RateForTask(t *model.Task, elapsed time.Duration, points []ProfilePoint) fl
 	case model.DistributionRamp:
 		return rampMultiplier(t, elapsed)
 	case model.DistributionDiurnal:
-		return diurnalMultiplier(points, elapsed)
+		if len(points) > 0 {
+			return diurnalMultiplier(points, elapsed)
+		}
+		// Wall-clock S-curve: based on time of day, not elapsed time
+		return DiurnalWallClock(time.Now())
 	default:
 		return flatMultiplier(t, elapsed)
+	}
+}
+
+// DiurnalWallClock returns a rate multiplier [0.5, 1.0] based on time of day.
+// Produces a natural S-curve traffic pattern:
+//
+//	23:00 - 00:00  sustain at 1.0 (peak hour)
+//	00:00 - 06:00  smooth cosine descent from 1.0 → 0.5
+//	06:00 - 23:00  smooth cosine ascent  from 0.5 → 1.0
+//
+// Uses cosine interpolation for smooth S-shaped transitions.
+func DiurnalWallClock(now time.Time) float64 {
+	h := float64(now.Hour()) + float64(now.Minute())/60.0 + float64(now.Second())/3600.0
+
+	switch {
+	case h >= 23: // 23:00 - 00:00: peak
+		return 1.0
+	case h < 6: // 00:00 - 06:00: decline 1.0 → 0.5
+		// cosine descent: cos(0)=1 → cos(π)=-1, mapped to [1.0, 0.5]
+		return 0.75 + 0.25*math.Cos(math.Pi*h/6.0)
+	default: // 06:00 - 23:00: rise 0.5 → 1.0
+		// cosine ascent: cos(π)=-1 → cos(0)=1, mapped to [0.5, 1.0]
+		return 0.75 - 0.25*math.Cos(math.Pi*(h-6.0)/17.0)
 	}
 }
 

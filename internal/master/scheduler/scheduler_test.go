@@ -76,6 +76,35 @@ func TestRateForTask_Diurnal(t *testing.T) {
 	}
 }
 
+func TestDiurnalWallClock(t *testing.T) {
+	// Helper to create a time at a specific hour:minute
+	at := func(hour, min int) time.Time {
+		return time.Date(2026, 3, 23, hour, min, 0, 0, time.Local)
+	}
+
+	tests := []struct {
+		name    string
+		t       time.Time
+		minMult float64
+		maxMult float64
+	}{
+		{"midnight", at(0, 0), 0.99, 1.01},        // just turned, still ~1.0
+		{"3am", at(3, 0), 0.70, 0.80},              // mid-descent
+		{"6am", at(6, 0), 0.49, 0.51},              // minimum = 0.5
+		{"noon", at(12, 0), 0.63, 0.73},             // mid-ascent
+		{"18:00", at(18, 0), 0.88, 0.98},            // nearing peak
+		{"23:00", at(23, 0), 0.99, 1.01},            // peak
+		{"23:30", at(23, 30), 0.99, 1.01},           // still peak
+	}
+	for _, tc := range tests {
+		mult := scheduler.DiurnalWallClock(tc.t)
+		if mult < tc.minMult || mult > tc.maxMult {
+			t.Errorf("%s (h=%d:%02d): mult=%f, expected [%f, %f]",
+				tc.name, tc.t.Hour(), tc.t.Minute(), mult, tc.minMult, tc.maxMult)
+		}
+	}
+}
+
 func TestApplyJitter(t *testing.T) {
 	base := 100 * time.Millisecond
 	// With 10% jitter, result should be in [90ms, 110ms]
