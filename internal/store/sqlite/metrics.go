@@ -92,8 +92,17 @@ func (s *taskMetricsStore) LatestByTaskAgents(ctx context.Context, taskID string
 type bandwidthStore struct{ db *sql.DB }
 
 func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) error {
+	unix := bs.RecordedAt.Unix()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO bandwidth_samples(agent_id,rate_mbps,recorded_at,ts) VALUES(?,?,?,?)`,
-		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC().Format("2006-01-02 15:04:05"), bs.RecordedAt.Unix())
+		bs.AgentID, bs.RateMbps, bs.RecordedAt.UTC().Format("2006-01-02 15:04:05"), unix)
+	if err != nil {
+		return err
+	}
+	// Update pre-aggregated 1-minute bucket
+	bucket := (unix / 60) * 60
+	_, err = s.db.ExecContext(ctx, `INSERT INTO bandwidth_agg(bucket,sum_mbps,max_mbps,cnt) VALUES(?,?,?,1)
+		ON CONFLICT(bucket) DO UPDATE SET sum_mbps=sum_mbps+excluded.sum_mbps, max_mbps=MAX(max_mbps,excluded.max_mbps), cnt=cnt+1`,
+		bucket, bs.RateMbps, bs.RateMbps)
 	return err
 }
 
@@ -118,15 +127,15 @@ func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to t
 }
 
 func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
-	// Use integer ts column for fast aggregation — no strftime overhead per row
+	// Read from pre-aggregated 1-minute table, re-bucket if stepSec > 60
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
-			(ts / %d) * %d as bucket,
-			SUM(rate_mbps),
-			MAX(rate_mbps)
-		FROM bandwidth_samples
-		WHERE ts BETWEEN ? AND ?
-		GROUP BY bucket ORDER BY bucket ASC`, stepSec, stepSec),
+			(bucket / %d) * %d as b,
+			SUM(sum_mbps),
+			MAX(max_mbps)
+		FROM bandwidth_agg
+		WHERE bucket BETWEEN ? AND ?
+		GROUP BY b ORDER BY b ASC`, stepSec, stepSec),
 		from.Unix(), to.Unix())
 	if err != nil {
 		return nil, err
@@ -146,7 +155,11 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 }
 
 func (s *bandwidthStore) PurgeOlderThan(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE ts < ?`, before.Unix())
+	unix := before.Unix()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_samples WHERE ts < ?`, unix); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bandwidth_agg WHERE bucket < ?`, unix)
 	return err
 }
 

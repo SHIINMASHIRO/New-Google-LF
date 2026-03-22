@@ -229,6 +229,27 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_bandwidth_ts ON bandwidth_samples(ts)`); err != nil {
 		return fmt.Errorf("create idx_bandwidth_ts: %w", err)
 	}
+	// Pre-aggregated 1-minute bandwidth buckets for fast dashboard queries
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bandwidth_agg (
+		bucket INTEGER PRIMARY KEY,
+		sum_mbps REAL NOT NULL DEFAULT 0,
+		max_mbps REAL NOT NULL DEFAULT 0,
+		cnt INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		return fmt.Errorf("create bandwidth_agg: %w", err)
+	}
+	// Backfill bandwidth_agg from raw samples if empty
+	var aggCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM bandwidth_agg`).Scan(&aggCount); err != nil {
+		return fmt.Errorf("count bandwidth_agg: %w", err)
+	}
+	if aggCount == 0 {
+		if _, err := db.Exec(`INSERT INTO bandwidth_agg(bucket, sum_mbps, max_mbps, cnt)
+			SELECT (ts/60)*60, SUM(rate_mbps), MAX(rate_mbps), COUNT(*)
+			FROM bandwidth_samples WHERE ts > 0 GROUP BY (ts/60)*60`); err != nil {
+			return fmt.Errorf("backfill bandwidth_agg: %w", err)
+		}
+	}
 	return nil
 }
 
