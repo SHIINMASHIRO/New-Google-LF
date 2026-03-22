@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Activity, Server, ListTodo, Zap } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -7,9 +7,17 @@ import { dashboardApi } from '../api/index.js'
 import StatCard from '../components/StatCard.jsx'
 import Badge from '../components/Badge.jsx'
 
-function fmtTime(iso) {
+const RANGES = [
+  { key: 'live', label: 'Live',   ms: 60 * 60 * 1000,       step: '1m',  refresh: 5000  },
+  { key: '3d',   label: '3 Days', ms: 3 * 24 * 3600 * 1000,  step: '15m', refresh: 60000 },
+  { key: '7d',   label: '7 Days', ms: 7 * 24 * 3600 * 1000,  step: '30m', refresh: 60000 },
+]
+
+function fmtTime(iso, range) {
   if (!iso) return ''
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const d = new Date(iso)
+  if (range === 'live') return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 const tooltipStyle = {
@@ -31,29 +39,38 @@ const SKELETON_STYLE = {
   color: 'var(--text-muted)', fontSize: 13,
 }
 
+const btnBase = {
+  padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+  border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 0.15s',
+  fontFamily: 'var(--font-ui)',
+}
+
 export default function Dashboard() {
   const [overview, setOverview] = useState(null)
   const [history,  setHistory]  = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [error,    setError]    = useState(null)
+  const [range,    setRange]    = useState('live')
   const abortRef = useRef(null)
+  const historyTimerRef = useRef(null)
 
   const loadOverview = async () => {
     try { const ov = await dashboardApi.overview(); setOverview(ov); setError(null) }
     catch (e) { if (e.name !== 'AbortError') setError(e.message) }
   }
 
-  const loadHistory = async (signal) => {
+  const loadHistory = useCallback(async (rangeKey, signal) => {
+    const cfg = RANGES.find(r => r.key === rangeKey) || RANGES[0]
     try {
       setHistoryLoading(true)
       const hist = await dashboardApi.bandwidthHistory(
-        new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
-        new Date().toISOString(), '30m',
+        new Date(Date.now() - cfg.ms).toISOString(),
+        new Date().toISOString(), cfg.step,
         signal
       )
       if (signal?.aborted) return
       setHistory((hist || []).map(p => ({
-        ts:  fmtTime(p.ts),
+        ts:  fmtTime(p.ts, rangeKey),
         avg: +p.avg_mbps.toFixed(2),
         max: +p.max_mbps.toFixed(2),
       })))
@@ -62,25 +79,32 @@ export default function Dashboard() {
     } finally {
       setHistoryLoading(false)
     }
-  }
+  }, [])
 
+  // Overview polling
+  useEffect(() => {
+    loadOverview()
+    const t = setInterval(loadOverview, 3000)
+    return () => clearInterval(t)
+  }, [])
+
+  // History polling — restarts when range changes
   useEffect(() => {
     const ac = new AbortController()
     abortRef.current = ac
 
-    // Load overview immediately (fast, <100ms)
-    loadOverview()
-    // Load history in background — does not block stat cards or agent ranking
-    loadHistory(ac.signal)
+    loadHistory(range, ac.signal)
 
-    const t1 = setInterval(loadOverview, 3000)
-    const t2 = setInterval(() => loadHistory(ac.signal), 60000)
+    const cfg = RANGES.find(r => r.key === range) || RANGES[0]
+    historyTimerRef.current = setInterval(() => loadHistory(range, ac.signal), cfg.refresh)
+
     return () => {
       ac.abort()
-      clearInterval(t1)
-      clearInterval(t2)
+      clearInterval(historyTimerRef.current)
     }
-  }, [])
+  }, [range, loadHistory])
+
+  const rangeLabel = (RANGES.find(r => r.key === range) || RANGES[0]).label
 
   const sortedAgents = overview?.agents
     ? [...overview.agents].sort((a, b) => b.rate_mbps - a.rate_mbps)
@@ -131,7 +155,25 @@ export default function Dashboard() {
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, color: 'var(--text)', marginBottom: 2 }}>
               Bandwidth History
             </h2>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 7 days · 30 min resolution</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {rangeLabel}
+              {range === 'live' && ' · 1 min resolution · auto-refresh 5s'}
+              {range === '3d'   && ' · 15 min resolution'}
+              {range === '7d'   && ' · 30 min resolution'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {RANGES.map(r => (
+              <button key={r.key} onClick={() => setRange(r.key)}
+                style={{
+                  ...btnBase,
+                  background: range === r.key ? 'var(--accent)' : 'var(--bg)',
+                  color: range === r.key ? '#fff' : 'var(--text-dim)',
+                  borderColor: range === r.key ? 'var(--accent)' : 'var(--border)',
+                }}>
+                {r.label}
+              </button>
+            ))}
           </div>
         </div>
 

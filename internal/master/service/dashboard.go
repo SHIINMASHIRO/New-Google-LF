@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -125,16 +126,24 @@ type OverviewResponse struct {
 	Agents        interface{} `json:"agents"`
 }
 
-// BandwidthHistory returns aggregated bandwidth samples (cached for 30s).
+// BandwidthHistory returns aggregated bandwidth samples (cached).
+// Live (step=60) caches for 3s, longer ranges cache for 30s.
 func (s *DashboardService) BandwidthHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
 	if stepSec <= 0 {
 		stepSec = 60
 	}
 
-	key := from.Truncate(time.Minute).Format(time.RFC3339) + "|" + to.Truncate(time.Minute).Format(time.RFC3339)
+	key := fmt.Sprintf("%d|%s|%s", stepSec,
+		from.Truncate(time.Minute).Format(time.RFC3339),
+		to.Truncate(time.Minute).Format(time.RFC3339))
+
+	ttl := 30 * time.Second
+	if stepSec <= 60 {
+		ttl = 3 * time.Second
+	}
 
 	s.historyMu.RLock()
-	if s.historyKey == key && time.Since(s.historyAt) < 30*time.Second {
+	if s.historyKey == key && time.Since(s.historyAt) < ttl {
 		cached := s.historyCache
 		s.historyMu.RUnlock()
 		return cached, nil
