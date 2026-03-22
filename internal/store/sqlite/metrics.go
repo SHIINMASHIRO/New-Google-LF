@@ -123,7 +123,7 @@ func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Tim
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			datetime((strftime('%%s', substr(recorded_at,1,19)) / %d) * %d, 'unixepoch') as bucket,
-			AVG(rate_mbps),
+			SUM(rate_mbps),
 			MAX(rate_mbps)
 		FROM bandwidth_samples
 		WHERE substr(recorded_at,1,19) BETWEEN ? AND ?
