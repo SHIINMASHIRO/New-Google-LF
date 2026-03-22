@@ -120,14 +120,17 @@ func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to t
 }
 
 func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
+	// Two-level aggregation: first AVG per agent per bucket, then SUM across agents.
+	// This gives the correct total bandwidth (not inflated by multiple heartbeats per agent).
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT
-			(bucket / %d) * %d as b,
-			SUM(sum_mbps),
-			MAX(max_mbps)
-		FROM bandwidth_agg
-		WHERE bucket BETWEEN $1 AND $2
-		GROUP BY b ORDER BY b ASC`, stepSec, stepSec),
+		SELECT bucket, SUM(agent_avg), MAX(agent_avg)
+		FROM (
+			SELECT (ts / %d) * %d as bucket, agent_id, AVG(rate_mbps) as agent_avg
+			FROM bandwidth_samples
+			WHERE ts BETWEEN $1 AND $2
+			GROUP BY bucket, agent_id
+		) sub
+		GROUP BY bucket ORDER BY bucket ASC`, stepSec, stepSec),
 		from.Unix(), to.Unix())
 	if err != nil {
 		return nil, err

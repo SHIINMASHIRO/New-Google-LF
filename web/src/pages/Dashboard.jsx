@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [historyLoading, setHistoryLoading] = useState(true)
   const [error,    setError]    = useState(null)
   const [range,    setRange]    = useState('live')
+  const [lastUpdate, setLastUpdate] = useState(null)
   const abortRef = useRef(null)
   const historyTimerRef = useRef(null)
 
@@ -74,6 +75,7 @@ export default function Dashboard() {
         avg: +p.avg_mbps.toFixed(2),
         max: +p.max_mbps.toFixed(2),
       })))
+      setLastUpdate(new Date())
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message)
     } finally {
@@ -157,9 +159,12 @@ export default function Dashboard() {
             </h2>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {rangeLabel}
-              {range === 'live' && ' · 1 min resolution · auto-refresh 5s'}
+              {range === 'live' && ' · 1 min · auto-refresh 5s'}
               {range === '3d'   && ' · 15 min resolution'}
               {range === '7d'   && ' · 30 min resolution'}
+              {lastUpdate && <span style={{ marginLeft: 8, opacity: 0.6 }}>
+                Updated {lastUpdate.toLocaleTimeString()}
+              </span>}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -216,9 +221,9 @@ export default function Dashboard() {
                 wrapperStyle={{ fontSize: 12, paddingTop: 16, fontFamily: 'DM Sans', color: 'var(--text-dim)' }}
               />
               <Area type="monotone" dataKey="avg" name="Avg Mbps"
-                stroke="#da7756" fill="url(#gAvg)" strokeWidth={2} dot={false} />
+                stroke="#da7756" fill="url(#gAvg)" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Area type="monotone" dataKey="max" name="Max Mbps"
-                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false} strokeDasharray="5 3" />
+                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
