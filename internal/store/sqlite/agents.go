@@ -9,7 +9,7 @@ import (
 	"github.com/aven/ngoogle/internal/model"
 )
 
-type agentStore struct{ db *sql.DB }
+type agentStore struct{ db, ro *sql.DB }
 
 func (s *agentStore) Upsert(ctx context.Context, a *model.Agent) error {
 	_, err := s.db.ExecContext(ctx, `
@@ -27,13 +27,13 @@ func (s *agentStore) Upsert(ctx context.Context, a *model.Agent) error {
 }
 
 func (s *agentStore) Get(ctx context.Context, id string) (*model.Agent, error) {
-	row := s.db.QueryRowContext(ctx,
+	row := s.ro.QueryRowContext(ctx,
 		`SELECT id,hostname,ip,port,token,status,version,current_rate_mbps,last_heartbeat,created_at,updated_at FROM agents WHERE id=?`, id)
 	return scanAgent(row)
 }
 
 func (s *agentStore) List(ctx context.Context) ([]*model.Agent, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.ro.QueryContext(ctx,
 		`SELECT id,hostname,ip,port,token,status,version,current_rate_mbps,last_heartbeat,created_at,updated_at FROM agents ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err

@@ -10,7 +10,7 @@ import (
 	"github.com/aven/ngoogle/internal/model"
 )
 
-type taskStore struct{ db *sql.DB }
+type taskStore struct{ db, ro *sql.DB }
 
 const taskCols = `id,group_id,name,type,url_pool_id,target_url,target_urls_json,agent_id,execution_scope,status,target_rate_mbps,
 start_at,end_at,duration_sec,total_bytes_target,total_requests_target,
@@ -41,12 +41,12 @@ func (s *taskStore) Create(ctx context.Context, t *model.Task) error {
 }
 
 func (s *taskStore) Get(ctx context.Context, id string) (*model.Task, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE id=?`, id)
+	row := s.ro.QueryRowContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE id=?`, id)
 	return scanTask(row)
 }
 
 func (s *taskStore) List(ctx context.Context) ([]*model.Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks ORDER BY created_at DESC`)
+	rows, err := s.ro.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (s *taskStore) List(ctx context.Context) ([]*model.Task, error) {
 }
 
 func (s *taskStore) ListByGroup(ctx context.Context, groupID string) ([]*model.Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE group_id=? ORDER BY created_at ASC`, groupID)
+	rows, err := s.ro.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE group_id=? ORDER BY created_at ASC`, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *taskStore) ListByAgent(ctx context.Context, agentID string, statuses []
 	}
 	q := fmt.Sprintf(`SELECT %s FROM tasks WHERE agent_id=? AND status IN (%s) ORDER BY created_at ASC`,
 		taskCols, strings.Join(placeholders, ","))
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.ro.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

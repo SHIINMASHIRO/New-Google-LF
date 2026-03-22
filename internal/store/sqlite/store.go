@@ -14,6 +14,7 @@ import (
 // sqliteStore implements store.Store.
 type sqliteStore struct {
 	db       *sql.DB
+	roDB     *sql.DB
 	agents   *agentStore
 	tasks    *taskStore
 	metrics  *taskMetricsStore
@@ -35,16 +36,30 @@ func New(dsn string) (store.Store, error) {
 	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("sqlite migrate: %w", err)
 	}
+	// Open a separate read-only connection pool for queries.
+	// WAL mode allows concurrent reads even while the writer is active.
+	// This prevents dashboard queries from being blocked behind heartbeat writes.
+	// For :memory: databases (tests), reuse the same connection since separate connections
+	// cannot access the same in-memory database.
+	roDB := db
+	if dsn != ":memory:" {
+		roDB, err = sql.Open("sqlite", dsn+"?mode=ro")
+		if err != nil {
+			return nil, fmt.Errorf("sqlite open read-only: %w", err)
+		}
+		roDB.SetMaxOpenConns(4)
+	}
 	s := &sqliteStore{
 		db:       db,
-		agents:   &agentStore{db},
-		tasks:    &taskStore{db},
-		metrics:  &taskMetricsStore{db},
+		roDB:     roDB,
+		agents:   &agentStore{db: db, ro: roDB},
+		tasks:    &taskStore{db: db, ro: roDB},
+		metrics:  &taskMetricsStore{db: db, ro: roDB},
 		profiles: &trafficProfileStore{db},
 		pools:    &urlPoolStore{db},
-		groups:   &taskGroupStore{db},
+		groups:   &taskGroupStore{db: db, ro: roDB},
 		jobs:     &provisionJobStore{db},
-		bw:       &bandwidthStore{db},
+		bw:       &bandwidthStore{db: db, ro: roDB},
 		creds:    &credentialStore{db},
 	}
 	return s, nil
@@ -59,7 +74,12 @@ func (s *sqliteStore) TaskGroups() store.TaskGroupStore           { return s.gro
 func (s *sqliteStore) ProvisionJobs() store.ProvisionJobStore     { return s.jobs }
 func (s *sqliteStore) Bandwidth() store.BandwidthStore            { return s.bw }
 func (s *sqliteStore) Credentials() store.CredentialStore         { return s.creds }
-func (s *sqliteStore) Close() error                               { return s.db.Close() }
+func (s *sqliteStore) Close() error {
+	if s.roDB != s.db {
+		s.roDB.Close()
+	}
+	return s.db.Close()
+}
 
 // ─── Migrations ───────────────────────────────────────────────────────────────
 

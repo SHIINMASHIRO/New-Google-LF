@@ -8,7 +8,7 @@ import (
 	"github.com/aven/ngoogle/internal/model"
 )
 
-type taskGroupStore struct{ db *sql.DB }
+type taskGroupStore struct{ db, ro *sql.DB }
 
 const taskGroupCols = `id,name,description,pool_ids_json,agent_id,execution_scope,target_rate_mbps,
 start_at,end_at,duration_sec,total_bytes_target,total_requests_target,dispatch_rate_tpm,dispatch_batch_size,
@@ -32,12 +32,12 @@ func (s *taskGroupStore) Create(ctx context.Context, g *model.TaskGroup) error {
 }
 
 func (s *taskGroupStore) Get(ctx context.Context, id string) (*model.TaskGroup, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+taskGroupCols+` FROM task_groups WHERE id=?`, id)
+	row := s.ro.QueryRowContext(ctx, `SELECT `+taskGroupCols+` FROM task_groups WHERE id=?`, id)
 	return scanTaskGroup(row)
 }
 
 func (s *taskGroupStore) List(ctx context.Context) ([]*model.TaskGroup, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+taskGroupCols+` FROM task_groups ORDER BY created_at DESC`)
+	rows, err := s.ro.QueryContext(ctx, `SELECT `+taskGroupCols+` FROM task_groups ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}

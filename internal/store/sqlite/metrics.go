@@ -10,7 +10,7 @@ import (
 	"github.com/aven/ngoogle/internal/store"
 )
 
-type taskMetricsStore struct{ db *sql.DB }
+type taskMetricsStore struct{ db, ro *sql.DB }
 
 func (s *taskMetricsStore) Insert(ctx context.Context, m *model.TaskMetrics) error {
 	_, err := s.db.ExecContext(ctx, `
@@ -23,7 +23,7 @@ func (s *taskMetricsStore) Insert(ctx context.Context, m *model.TaskMetrics) err
 }
 
 func (s *taskMetricsStore) ListByTask(ctx context.Context, taskID string, from, to time.Time) ([]*model.TaskMetrics, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.ro.QueryContext(ctx, `
 		SELECT id,task_id,agent_id,bytes_total,bytes_delta,rate_mbps_5s,rate_mbps_30s,request_count,error_count,recorded_at
 		FROM task_metrics WHERE task_id=? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at ASC`,
 		taskID, from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
@@ -44,7 +44,7 @@ func (s *taskMetricsStore) ListByTask(ctx context.Context, taskID string, from, 
 }
 
 func (s *taskMetricsStore) LatestByTask(ctx context.Context, taskID string) (*model.TaskMetrics, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.ro.QueryRowContext(ctx, `
 		SELECT id,task_id,agent_id,bytes_total,bytes_delta,rate_mbps_5s,rate_mbps_30s,request_count,error_count,recorded_at
 		FROM task_metrics WHERE task_id=? ORDER BY recorded_at DESC LIMIT 1`, taskID)
 	m := &model.TaskMetrics{}
@@ -57,7 +57,7 @@ func (s *taskMetricsStore) LatestByTask(ctx context.Context, taskID string) (*mo
 }
 
 func (s *taskMetricsStore) LatestByTaskAgents(ctx context.Context, taskID string) ([]*model.TaskMetrics, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.ro.QueryContext(ctx, `
 		SELECT tm.id,tm.task_id,tm.agent_id,tm.bytes_total,tm.bytes_delta,tm.rate_mbps_5s,tm.rate_mbps_30s,tm.request_count,tm.error_count,tm.recorded_at
 		FROM task_metrics tm
 		INNER JOIN (
@@ -89,7 +89,7 @@ func (s *taskMetricsStore) LatestByTaskAgents(ctx context.Context, taskID string
 
 // ─── Bandwidth ────────────────────────────────────────────────────────────────
 
-type bandwidthStore struct{ db *sql.DB }
+type bandwidthStore struct{ db, ro *sql.DB }
 
 func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) error {
 	unix := bs.RecordedAt.Unix()
@@ -107,7 +107,7 @@ func (s *bandwidthStore) Insert(ctx context.Context, bs *model.BandwidthSample) 
 }
 
 func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to time.Time) ([]*model.BandwidthSample, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.ro.QueryContext(ctx, `
 		SELECT id,agent_id,rate_mbps,recorded_at FROM bandwidth_samples
 		WHERE agent_id=? AND recorded_at BETWEEN ? AND ? ORDER BY recorded_at ASC`,
 		agentID, from.UTC().Format("2006-01-02 15:04:05"), to.UTC().Format("2006-01-02 15:04:05"))
@@ -128,7 +128,7 @@ func (s *bandwidthStore) History(ctx context.Context, agentID string, from, to t
 
 func (s *bandwidthStore) AggregateHistory(ctx context.Context, from, to time.Time, stepSec int) ([]store.BandwidthPoint, error) {
 	// Read from pre-aggregated 1-minute table, re-bucket if stepSec > 60
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := s.ro.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			(bucket / %d) * %d as b,
 			SUM(sum_mbps),
@@ -165,7 +165,7 @@ func (s *bandwidthStore) PurgeOlderThan(ctx context.Context, before time.Time) e
 
 func (s *bandwidthStore) TotalCurrent(ctx context.Context, since time.Time) (float64, error) {
 	// Sum of the latest rate_mbps per agent
-	row := s.db.QueryRowContext(ctx, `
+	row := s.ro.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(rate_mbps),0) FROM (
 			SELECT agent_id, rate_mbps FROM bandwidth_samples
 			WHERE ts >= ?
