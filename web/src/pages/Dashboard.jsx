@@ -241,8 +241,7 @@ export default function Dashboard() {
                 tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'DM Sans' }}
                 tickLine={false} axisLine={false}
                 width={68}
-                tickFormatter={v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 'K' : v}
-                unit=" M" />
+                tickFormatter={v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + ' G' : v + ' M'} />
               <Tooltip
                 contentStyle={tooltipStyle.contentStyle}
                 labelStyle={tooltipStyle.labelStyle}
