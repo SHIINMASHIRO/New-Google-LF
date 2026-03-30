@@ -79,23 +79,30 @@ export default function Dashboard() {
     return () => clearInterval(t)
   }, [])
 
-  // ── Live mode: push overview.total_rate_mbps into a rolling buffer ──
+  // ── Live mode: pre-fill full window, new data enters from the right ──
+  useEffect(() => {
+    if (range === 'live') {
+      // Pre-fill with LIVE_MAX_POINTS empty slots spanning the full 3-min window
+      const now = Date.now()
+      const buf = []
+      for (let i = LIVE_MAX_POINTS - 1; i >= 0; i--) {
+        buf.push({ ts: fmtLiveTime(new Date(now - i * 3000)), avg: null })
+      }
+      liveRef.current = buf
+      setLiveData(buf)
+      setHistoryLoading(false)
+    }
+  }, [range])
+
+  // Push new data to the right edge, shift everything left
   useEffect(() => {
     if (range !== 'live' || !overview) return
     const now = new Date()
     const point = { ts: fmtLiveTime(now), avg: +overview.total_rate_mbps.toFixed(1) }
-    liveRef.current = [...liveRef.current.slice(-(LIVE_MAX_POINTS - 1)), point]
-    setLiveData([...liveRef.current])
+    const buf = [...liveRef.current.slice(1), point]
+    liveRef.current = buf
+    setLiveData(buf)
   }, [overview, range])
-
-  // Clear live buffer when switching away from live
-  useEffect(() => {
-    if (range === 'live') {
-      liveRef.current = []
-      setLiveData([])
-      setHistoryLoading(false)
-    }
-  }, [range])
 
   // ── History mode (3d / 7d) ──
   const loadHistory = useCallback(async (rangeKey, signal) => {
@@ -211,7 +218,7 @@ export default function Dashboard() {
               <span>Loading…</span>
             </div>
           </div>
-        ) : chartData.length > 0 ? (
+        ) : (isLive || chartData.length > 0) ? (
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <defs>
@@ -238,20 +245,23 @@ export default function Dashboard() {
                 contentStyle={tooltipStyle.contentStyle}
                 labelStyle={tooltipStyle.labelStyle}
                 itemStyle={tooltipStyle.itemStyle}
+                formatter={(val) => val === null ? 'N/A' : val}
               />
               {!isLive && <Legend
                 iconType="plainline"
                 wrapperStyle={{ fontSize: 12, paddingTop: 16, fontFamily: 'DM Sans', color: 'var(--text-dim)' }}
               />}
               <Area type="monotone" dataKey="avg" name={isLive ? 'Total Mbps' : 'Avg Mbps'}
-                stroke="#da7756" fill="url(#gAvg)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                stroke="#da7756" fill="url(#gAvg)" strokeWidth={2} dot={false}
+                isAnimationActive={false} connectNulls={false} />
               {!isLive && <Area type="monotone" dataKey="max" name="Max Mbps"
-                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false} strokeDasharray="5 3" isAnimationActive={false} />}
+                stroke="#3d7a52" fill="url(#gMax)" strokeWidth={1.5} dot={false}
+                strokeDasharray="5 3" isAnimationActive={false} connectNulls={false} />}
             </AreaChart>
           </ResponsiveContainer>
         ) : (
           <div className="empty" style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {isLive ? 'Waiting for data…' : 'No data yet — start some tasks to see bandwidth history'}
+            No data yet — start some tasks to see bandwidth history
           </div>
         )}
       </div>
