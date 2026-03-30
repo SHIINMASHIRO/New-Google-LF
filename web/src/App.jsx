@@ -1,18 +1,20 @@
 import React from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Server, ListTodo, Key, Link2 } from 'lucide-react'
+import { LayoutDashboard, Server, ListTodo, Key, Link2, Activity } from 'lucide-react'
 import Dashboard from './pages/Dashboard.jsx'
 import Agents from './pages/Agents.jsx'
 import Tasks from './pages/Tasks.jsx'
 import TaskDetail from './pages/TaskDetail.jsx'
 import Credentials from './pages/Credentials.jsx'
 import URLPools from './pages/URLPools.jsx'
+import Profiles from './pages/Profiles.jsx'
 
 const navItems = [
   { to: '/',            icon: LayoutDashboard, label: 'Dashboard',   exact: true },
   { to: '/agents',      icon: Server,          label: 'Agents' },
   { to: '/url-pools',   icon: Link2,           label: 'URL Pools' },
   { to: '/tasks',       icon: ListTodo,        label: 'Tasks' },
+  { to: '/profiles',   icon: Activity,        label: 'Profiles' },
   { to: '/credentials', icon: Key,             label: 'Credentials' },
 ]
 
@@ -126,6 +128,7 @@ export default function App() {
           <Route path="/url-pools"   element={<URLPools />} />
           <Route path="/tasks"       element={<Tasks />} />
           <Route path="/tasks/:id"   element={<TaskDetail />} />
+          <Route path="/profiles"   element={<Profiles />} />
           <Route path="/credentials" element={<Credentials />} />
         </Routes>
       </main>

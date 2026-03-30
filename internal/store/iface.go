@@ -44,6 +44,7 @@ type TrafficProfileStore interface {
 	Create(ctx context.Context, p *model.TrafficProfile) error
 	Get(ctx context.Context, id string) (*model.TrafficProfile, error)
 	List(ctx context.Context) ([]*model.TrafficProfile, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type URLPoolStore interface {

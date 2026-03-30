@@ -86,6 +86,7 @@ type Task struct {
 	RampUpSec           int                `json:"ramp_up_sec" db:"ramp_up_sec"`
 	RampDownSec         int                `json:"ramp_down_sec" db:"ramp_down_sec"`
 	TrafficProfileID    string             `json:"traffic_profile_id" db:"traffic_profile_id"`
+	ProfilePoints       string             `json:"profile_points,omitempty" db:"-"`
 	ConcurrentFragments int                `json:"concurrent_fragments" db:"concurrent_fragments"`
 	Retries             int                `json:"retries" db:"retries"`
 	TotalBytesDone      int64              `json:"total_bytes_done" db:"total_bytes_done"`

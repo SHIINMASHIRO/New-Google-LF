@@ -24,6 +24,7 @@ func NewProfileHandler(st store.Store) *ProfileHandler {
 func (h *ProfileHandler) Router(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/traffic-profiles", h.Create)
 	mux.HandleFunc("GET /api/v1/traffic-profiles", h.List)
+	mux.HandleFunc("DELETE /api/v1/traffic-profiles/{id}", h.Delete)
 }
 
 // Create handles POST /api/v1/traffic-profiles
@@ -64,6 +65,16 @@ func (h *ProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, profiles)
+}
+
+// Delete handles DELETE /api/v1/traffic-profiles/{id}
+func (h *ProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.TrafficProfiles().Delete(r.Context(), id); err != nil {
+		respondErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // newID generates a random hex ID.

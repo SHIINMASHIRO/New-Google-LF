@@ -30,6 +30,11 @@ func (s *trafficProfileStore) Get(ctx context.Context, id string) (*model.Traffi
 	return p, err
 }
 
+func (s *trafficProfileStore) Delete(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM traffic_profiles WHERE id=?`, id)
+	return err
+}
+
 func (s *trafficProfileStore) List(ctx context.Context) ([]*model.TrafficProfile, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,distribution,points,created_at FROM traffic_profiles ORDER BY created_at DESC`)
 	if err != nil {

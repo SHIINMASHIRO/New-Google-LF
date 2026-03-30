@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Plus, RefreshCw, Play, StopCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { tasksApi, agentsApi, urlPoolsApi } from '../api/index.js'
+import { tasksApi, agentsApi, urlPoolsApi, profilesApi } from '../api/index.js'
 import Badge from '../components/Badge.jsx'
 
 function fmtDate(iso) {
@@ -13,6 +13,7 @@ export default function Tasks() {
   const [groups,    setGroups]    = useState([])
   const [agents,    setAgents]    = useState([])
   const [pools,     setPools]     = useState([])
+  const [profiles,  setProfiles]  = useState([])
   const [showModal, setShowModal] = useState(false)
   const [error,     setError]     = useState(null)
   const [metaError, setMetaError] = useState(null)
@@ -47,10 +48,11 @@ export default function Tasks() {
 
     metaPromiseRef.current = (async () => {
       try {
-        const [a, p] = await Promise.all([agentsApi.list(), urlPoolsApi.list()])
+        const [a, p, pr] = await Promise.all([agentsApi.list(), urlPoolsApi.list(), profilesApi.list()])
         if (!mountedRef.current) return
         setAgents(a || [])
         setPools(p || [])
+        setProfiles(pr || [])
         setMetaError(null)
         setMetaLoaded(true)
       } catch (e) {
@@ -191,7 +193,7 @@ export default function Tasks() {
 
       {showModal && (
         <CreateTaskModal
-          agents={agents} pools={pools} metaLoaded={metaLoaded}
+          agents={agents} pools={pools} profiles={profiles} metaLoaded={metaLoaded}
           onClose={() => setShowModal(false)}
           onSuccess={() => { setShowModal(false); reload() }}
         />
@@ -200,7 +202,7 @@ export default function Tasks() {
   )
 }
 
-function CreateTaskModal({ agents, pools, metaLoaded, onClose, onSuccess }) {
+function CreateTaskModal({ agents, pools, profiles, metaLoaded, onClose, onSuccess }) {
   const [form, setForm] = useState({
     name: '', pool_ids: [], agent_id: '', execution_scope: 'global',
     target_rate_mbps: 10000, duration_days: 7,
@@ -208,6 +210,7 @@ function CreateTaskModal({ agents, pools, metaLoaded, onClose, onSuccess }) {
     ramp_up_sec: 0, ramp_down_sec: 0,
     concurrent_fragments: 1, retries: 3,
     total_bytes_target: 0, dispatch_rate_tpm: 0,
+    traffic_profile_id: '',
   })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
@@ -366,6 +369,18 @@ function CreateTaskModal({ agents, pools, metaLoaded, onClose, onSuccess }) {
                 onChange={e => set('ramp_up_sec', e.target.value)} />
             </Field>
           </div>
+
+          {form.distribution === 'diurnal' && profiles.length > 0 && (
+            <Field label="Traffic Profile">
+              <select className="input" value={form.traffic_profile_id}
+                onChange={e => set('traffic_profile_id', e.target.value)}>
+                <option value="">Wall-clock S-curve (default)</option>
+                {profiles.filter(p => p.distribution === 'diurnal' || !p.distribution).map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
 
           {selectedTypes.includes('youtube') && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

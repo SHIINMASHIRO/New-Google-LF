@@ -41,6 +41,7 @@ export const tasksApi = {
 export const profilesApi = {
   list: () => req('GET', '/traffic-profiles'),
   create: (data) => req('POST', '/traffic-profiles', data),
+  delete: (id) => req('DELETE', `/traffic-profiles/${id}`),
 }
 
 export const urlPoolsApi = {

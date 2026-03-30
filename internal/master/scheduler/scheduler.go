@@ -176,7 +176,34 @@ func flatMultiplier(t *model.Task, elapsed time.Duration) float64 {
 }
 
 func rampMultiplier(t *model.Task, elapsed time.Duration) float64 {
-	return flatMultiplier(t, elapsed)
+	rampUp := time.Duration(t.RampUpSec) * time.Second
+	rampDown := time.Duration(t.RampDownSec) * time.Second
+
+	// If explicit ramp-up/ramp-down params are set, use trapezoidal shape (same as flat).
+	if rampUp > 0 || rampDown > 0 {
+		return flatMultiplier(t, elapsed)
+	}
+
+	// Otherwise: symmetric triangle wave over the entire duration (0 → 1 → 0).
+	totalDur := time.Duration(t.DurationSec) * time.Second
+	if t.EndAt != nil && t.StartedAt != nil {
+		totalDur = t.EndAt.Sub(*t.StartedAt)
+	}
+	if totalDur <= 0 {
+		return 1.0
+	}
+	half := totalDur / 2
+	if elapsed <= half {
+		if half == 0 {
+			return 1.0
+		}
+		return elapsed.Seconds() / half.Seconds()
+	}
+	remaining := totalDur - elapsed
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining.Seconds() / half.Seconds()
 }
 
 func diurnalMultiplier(points []ProfilePoint, elapsed time.Duration) float64 {

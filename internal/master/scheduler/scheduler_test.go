@@ -25,14 +25,14 @@ func TestRateForTask_Flat(t *testing.T) {
 	}
 }
 
-func TestRateForTask_Ramp(t *testing.T) {
+func TestRateForTask_Ramp_Trapezoidal(t *testing.T) {
+	// With explicit RampUpSec/RampDownSec, ramp behaves as trapezoidal (same as flat).
 	task := &model.Task{
 		Distribution: model.DistributionRamp,
 		DurationSec:  60,
 		RampUpSec:    10,
 		RampDownSec:  10,
 	}
-	// DurationSec=60, RampDownSec=10 → ramp-down starts at 50s
 	tests := []struct {
 		sec     int
 		minMult float64
@@ -44,6 +44,32 @@ func TestRateForTask_Ramp(t *testing.T) {
 		{30, 0.99, 1.01}, // steady
 		{55, 0.45, 0.55}, // mid ramp-down (50s start, 60s end → 55s is mid)
 		{60, 0.0, 0.01},  // end of ramp-down
+	}
+	for _, tc := range tests {
+		elapsed := time.Duration(tc.sec) * time.Second
+		mult := scheduler.RateForTask(task, elapsed, nil)
+		if mult < tc.minMult || mult > tc.maxMult {
+			t.Errorf("sec=%d: mult=%f, expected [%f, %f]", tc.sec, mult, tc.minMult, tc.maxMult)
+		}
+	}
+}
+
+func TestRateForTask_Ramp_Triangle(t *testing.T) {
+	// Without explicit ramp params, ramp uses a symmetric triangle: 0 → 1 → 0.
+	task := &model.Task{
+		Distribution: model.DistributionRamp,
+		DurationSec:  60,
+	}
+	tests := []struct {
+		sec     int
+		minMult float64
+		maxMult float64
+	}{
+		{0, 0.0, 0.01},   // start: 0
+		{15, 0.49, 0.51},  // quarter: 0.5
+		{30, 0.99, 1.01},  // midpoint peak: 1.0
+		{45, 0.49, 0.51},  // three-quarter: 0.5
+		{60, 0.0, 0.01},   // end: 0
 	}
 	for _, tc := range tests {
 		elapsed := time.Duration(tc.sec) * time.Second

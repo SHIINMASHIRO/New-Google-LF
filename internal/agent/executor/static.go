@@ -3,6 +3,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,18 @@ import (
 	"github.com/aven/ngoogle/internal/model"
 	"github.com/aven/ngoogle/pkg/ratelimit"
 )
+
+// parseProfilePoints parses the JSON profile points embedded in the task.
+func parseProfilePoints(task *model.Task) []scheduler.ProfilePoint {
+	if task.ProfilePoints == "" || task.ProfilePoints == "[]" {
+		return nil
+	}
+	var points []scheduler.ProfilePoint
+	if err := json.Unmarshal([]byte(task.ProfilePoints), &points); err != nil {
+		return nil
+	}
+	return points
+}
 
 // StaticResult holds the result of a static download.
 type StaticResult struct {
@@ -58,6 +71,7 @@ func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratel
 	}
 
 	// Rate adjustment goroutine
+	profilePoints := parseProfilePoints(task)
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
@@ -72,7 +86,7 @@ func (e *StaticExecutor) Run(ctx context.Context, task *model.Task, meter *ratel
 				} else {
 					elapsed = time.Since(startedAt)
 				}
-				mult := scheduler.RateForTask(task, elapsed, nil)
+				mult := scheduler.RateForTask(task, elapsed, profilePoints)
 				tb.SetRate(task.TargetRateMbps * mult)
 			}
 		}

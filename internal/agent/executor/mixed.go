@@ -37,6 +37,7 @@ func (e *MixedExecutor) Run(ctx context.Context, task *model.Task, meter *rateli
 		}
 	}
 
+	profilePoints := parseProfilePoints(task)
 	var totalBytes int64
 	reqCount := int64(0)
 
@@ -60,7 +61,7 @@ func (e *MixedExecutor) Run(ctx context.Context, task *model.Task, meter *rateli
 		} else {
 			elapsed = time.Since(startedAt)
 		}
-		mult := scheduler.RateForTask(task, elapsed, nil)
+		mult := scheduler.RateForTask(task, elapsed, profilePoints)
 		tb.SetRate(task.TargetRateMbps * mult)
 
 		targetURL := urls[int(reqCount)%len(urls)]

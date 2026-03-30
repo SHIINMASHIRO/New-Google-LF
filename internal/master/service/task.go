@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -211,6 +212,10 @@ func (s *TaskService) PullTasks(ctx context.Context, agentID string) ([]*model.T
 		if err != nil {
 			return nil, err
 		}
+		task, err = s.attachProfilePoints(ctx, task)
+		if err != nil {
+			return nil, err
+		}
 		task.Normalize()
 		switch task.ExecutionScope {
 		case model.TaskExecutionScopeGlobal:
@@ -260,7 +265,9 @@ func (s *TaskService) MarkFailed(ctx context.Context, taskID string, reason stri
 	case model.TaskStatusDone, model.TaskStatusFailed, model.TaskStatusStopped:
 		return nil
 	}
-	_ = s.store.Tasks().SetError(ctx, taskID, reason)
+	if err := s.store.Tasks().SetError(ctx, taskID, reason); err != nil {
+		slog.Error("failed to set task error message", "task", taskID, "err", err)
+	}
 	return s.store.Tasks().UpdateStatusWithTime(ctx, taskID, model.TaskStatusFailed, time.Now(), "finished_at")
 }
 
@@ -321,6 +328,19 @@ func (s *TaskService) resolveTaskSource(ctx context.Context, req *CreateTaskRequ
 		return nil, nil, "", err
 	}
 	return nil, urls, req.Type, nil
+}
+
+func (s *TaskService) attachProfilePoints(ctx context.Context, task *model.Task) (*model.Task, error) {
+	if task.TrafficProfileID == "" {
+		return task, nil
+	}
+	profile, err := s.store.TrafficProfiles().Get(ctx, task.TrafficProfileID)
+	if err != nil {
+		return task, nil // profile not found is non-fatal; fall back to default curve
+	}
+	task = task.Clone()
+	task.ProfilePoints = profile.Points
+	return task, nil
 }
 
 func (s *TaskService) attachURLPool(ctx context.Context, task *model.Task) (*model.Task, error) {
